@@ -1,0 +1,50 @@
+# Production Enthusia will normally use 100000 for the pregenerated overworld.
+# Set a world's core-radius-blocks to 0 on a disposable test world to make
+# every newly generated chunk managed by Frontier.
+worlds:
+  world:
+    enabled: true
+    core-radius-blocks: 100000
+  world_nether:
+    enabled: false
+    core-radius-blocks: 100000
+  world_the_end:
+    enabled: false
+    core-radius-blocks: 100000
+
+tracking:
+  # Activity permanently protects the touched chunk and this many neighboring chunks.
+  protection-radius-chunks: 2
+  mutation-queue-capacity: 65536
+  mutation-batch-size: 512
+
+throttle:
+  # If true, startup fails if this Paper/Leaf build cannot expose the expected
+  # runtime per-player chunk-generation controls.
+  require-supported-adapter: true
+  sample-period-ticks: 20
+  recovery-hysteresis-mspt: 2.0
+  levels:
+    - name: healthy
+      enter-mspt: 0.0
+      max-generation-rate: 32.0
+      max-concurrent-generations: 4
+    - name: elevated
+      enter-mspt: 25.0
+      max-generation-rate: 16.0
+      max-concurrent-generations: 3
+    - name: pressured
+      enter-mspt: 35.0
+      max-generation-rate: 8.0
+      max-concurrent-generations: 2
+    - name: critical
+      enter-mspt: 45.0
+      max-generation-rate: 2.0
+      max-concurrent-generations: 1
+
+cleanup:
+  # Destructive cleanup remains disabled until its real Leaf/Paper acceptance
+  # milestone is complete. Tracking and generation throttling are independent.
+  enabled: false
+  dry-run: true
+  untouched-retention-days: 30

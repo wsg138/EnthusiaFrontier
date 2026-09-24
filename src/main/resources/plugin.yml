@@ -1,0 +1,15 @@
+name: EnthusiaFrontier
+version: '${version}'
+main: net.enthusia.frontier.EnthusiaFrontierPlugin
+api-version: '1.21.11'
+author: Enthusia
+description: Adaptive world-frontier generation and lifecycle management for large Leaf/Paper worlds.
+commands:
+  frontier:
+    description: EnthusiaFrontier diagnostics and administration.
+    usage: /frontier status
+    permission: enthusiafrontier.admin
+permissions:
+  enthusiafrontier.admin:
+    description: Allows Frontier status and administrative commands.
+    default: op
