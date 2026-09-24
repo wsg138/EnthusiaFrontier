@@ -10,10 +10,8 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
-import java.util.UUID;
 import java.util.logging.Level;
 import net.enthusia.frontier.application.FrontierMutation;
 import net.enthusia.frontier.application.FrontierRepository;
@@ -25,6 +23,7 @@ import net.enthusia.frontier.domain.ActivityKind;
 import net.enthusia.frontier.domain.ChunkKey;
 import net.enthusia.frontier.domain.CoreBoundaryPolicy;
 import net.enthusia.frontier.domain.RegionKey;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -84,11 +83,12 @@ public final class FrontierAcceptanceHarness {
     }
 
     private boolean isolatedSentinel(CommandSender sender) {
+        String motd = PlainTextComponentSerializer.plainText().serialize(plugin.getServer().motd());
         return sender instanceof ConsoleCommandSender
                 && plugin.getServer().getOnlinePlayers().isEmpty()
                 && plugin.getServer().getMaxPlayers() <= 2
                 && "127.0.0.1".equals(plugin.getServer().getIp())
-                && SENTINEL_MOTD.equals(plugin.getServer().getMotd());
+                && SENTINEL_MOTD.equals(motd);
     }
 
     private void prepare(CommandSender sender) {
