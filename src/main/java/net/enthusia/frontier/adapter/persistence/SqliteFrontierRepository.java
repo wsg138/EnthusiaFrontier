@@ -14,7 +14,7 @@ import net.enthusia.frontier.application.FrontierRepository;
 import net.enthusia.frontier.application.FrontierStats;
 
 /** SQLite implementation of the durable frontier ledger. */
-public final class SqliteFrontierRepository implements FrontierRepository {
+public final class SqliteFrontierRepository implements FrontierRepository, AutoCloseable {
     private static final int SCHEMA_VERSION = 1;
     private final Path databasePath;
     private Connection connection;

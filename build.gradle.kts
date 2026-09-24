@@ -14,13 +14,17 @@ plugins {
 group = "net.enthusia.frontier"
 version = providers.gradleProperty("releaseVersion").get()
 
+val minecraftVersionValue = providers.gradleProperty("minecraftVersion").get()
+val paperApiVersionValue = providers.gradleProperty("paperApiVersion").get()
+val javaVersionValue = providers.gradleProperty("javaVersion").get()
+
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:${providers.gradleProperty("paperApiVersion").get()}")
+    compileOnly("io.papermc.paper:paper-api:$paperApiVersionValue")
     implementation("org.xerial:sqlite-jdbc:${providers.gradleProperty("sqliteJdbcVersion").get()}")
 
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
@@ -29,7 +33,7 @@ dependencies {
 }
 
 java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(providers.gradleProperty("javaVersion").get().toInt()))
+    toolchain.languageVersion.set(JavaLanguageVersion.of(javaVersionValue.toInt()))
     withSourcesJar()
 }
 
@@ -117,14 +121,17 @@ tasks.check {
 }
 
 tasks.register("verifyCurrentPlatformBaseline") {
+    inputs.property("minecraftVersion", minecraftVersionValue)
+    inputs.property("paperApiVersion", paperApiVersionValue)
+    inputs.property("javaVersion", javaVersionValue)
     doLast {
-        check(providers.gradleProperty("minecraftVersion").get() == "1.21.11") {
+        check(minecraftVersionValue == "1.21.11") {
             "Minecraft baseline changed without an intentional platform migration."
         }
-        check(providers.gradleProperty("paperApiVersion").get() == "1.21.11-R0.1-SNAPSHOT") {
+        check(paperApiVersionValue == "1.21.11-R0.1-SNAPSHOT") {
             "Paper API baseline changed without an intentional platform migration."
         }
-        check(providers.gradleProperty("javaVersion").get() == "21") {
+        check(javaVersionValue == "21") {
             "Java baseline changed without an intentional platform migration."
         }
     }
