@@ -4,7 +4,7 @@ Frontier has policy/persistence risk and real Paper/Moonrise storage risk, so va
 
 ## 1. Normal CI
 
-Every PR runs:
+Every PR and every push to `main` runs:
 
 ```text
 gradle clean check shadowJar --no-daemon
@@ -40,9 +40,9 @@ Sentinel's current generic restart executor does not execute arbitrary repositor
 
 ## 3. Real Paper Reclaim Acceptance
 
-The repository-owned `Real Paper Reclaim Acceptance` GitHub Actions workflow is the destructive runtime gate. It:
+The repository-owned `Real Paper Reclaim Acceptance` GitHub Actions workflow is the destructive runtime gate. It runs for pull requests and again for every push to `main` so the merged commit receives its own exact-SHA evidence. It:
 
-1. builds the exact PR head with the same Java/quality gates;
+1. builds the exact checked-out commit with the same Java/quality gates;
 2. resolves a stable Paper 1.21.11 server runtime from PaperMC's official downloads service and records its URL/SHA-256;
 3. creates a disposable loopback-only server with Sentinel's exact isolated-test MOTD and at most two player slots;
 4. starts Paper and waits for readiness;
@@ -69,7 +69,18 @@ The acceptance harness itself:
 
 The workflow always uploads bounded server logs plus Paper and plugin hashes as evidence.
 
-## 4. Destructive safety fence
+## 4. Exact-main artifact
+
+`Sentinel Plugin Artifact` runs on pull requests and again on pushes to `main`. The `main` run rebuilds the merged commit and uploads the stable contract:
+
+```text
+sentinel-plugin/plugin.jar
+sentinel-plugin/plugin.jar.sha256
+```
+
+This removes any ambiguity between a validated PR-head JAR and the merge-commit SHA even when both commits have identical source trees. Both workflows also support manual dispatch for bounded recovery/revalidation.
+
+## 5. Destructive safety fence
 
 The acceptance command operates only when all of these are true:
 
@@ -82,24 +93,25 @@ The acceptance command operates only when all of these are true:
 
 It is not a general production delete command.
 
-## 5. Crash/recovery evidence
+## 6. Crash/recovery evidence
 
 Normal CI proves the ordering invariant that destructive candidates require a SQLite-committed reclaim intent and that intents survive repository restart. Exact-key reservation is also covered so the runtime harness cannot bypass that invariant.
 
 Runtime cleanup re-checks journal/MSPT/player/load/ticket/activity safety before Moonrise mutation. If final deletion persistence fails after logical clear, the persistent safety latch disables further cleanup while the durable intent remains available for diagnosis/recovery.
 
-## 6. Exact-head rule
+## 7. Exact-head rule
 
-Runtime evidence applies only to the exact plugin source SHA and exact produced JAR. Any code, safety-relevant configuration, test-harness, or workflow change invalidates prior runtime evidence.
+Runtime evidence applies only to the exact plugin source SHA and exact produced JAR. Any code, safety-relevant configuration, test-harness, or workflow change invalidates prior runtime evidence. Pull-request evidence is therefore followed by exact-main artifact and real-Paper acceptance runs after merge.
 
-## 7. Production rollout order
+## 8. Production rollout order
 
 1. exact-head CI, artifact, Sentinel startup/restart, and real-Paper reclaim acceptance all green;
-2. production generation throttling enabled with cleanup disabled;
-3. tracking/protection soak;
-4. cleanup enabled in dry-run only;
-5. inspect candidate reports/status and backup behavior;
-6. production with the `100000` permanent core and destructive cleanup still dry-run;
-7. explicit owner-reviewed destructive enable only after observed candidate reports and real disk-reclaim evidence are clean.
+2. merged `main` artifact and real-Paper reclaim acceptance green for the merge commit;
+3. production generation throttling enabled with cleanup disabled;
+4. tracking/protection soak;
+5. cleanup enabled in dry-run only;
+6. inspect candidate reports/status and backup behavior;
+7. production with the `100000` permanent core and destructive cleanup still dry-run;
+8. explicit owner-reviewed destructive enable only after observed candidate reports and real disk-reclaim evidence are clean.
 
 Enthusia production uses Leaf rather than stock Paper. The exact installed Leaf build is still protected by startup compatibility probes: when the generation/storage adapters are required, unsupported internals fail closed instead of using guessed reflection.
