@@ -1,6 +1,7 @@
 package net.enthusia.frontier.domain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -30,5 +31,13 @@ class AdaptiveThrottlePolicyTest {
     @Test
     void largeRecoveryCanReturnDirectlyToHealthy() {
         assertEquals("healthy", policy.select(20.0, levels.get(3)).name());
+    }
+
+    @Test
+    void generationLimitsRejectUnsafeValues() {
+        assertThrows(IllegalArgumentException.class, () -> new GenerationLimits(0.0, 1));
+        assertThrows(IllegalArgumentException.class, () -> new GenerationLimits(Double.NaN, 1));
+        assertThrows(IllegalArgumentException.class, () -> new GenerationLimits(1.0, -2));
+        assertEquals(new GenerationLimits(-1.0, -1), new GenerationLimits(-1.0, -1));
     }
 }
