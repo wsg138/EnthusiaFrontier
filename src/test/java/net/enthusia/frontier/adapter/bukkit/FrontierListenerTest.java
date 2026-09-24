@@ -12,13 +12,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import net.enthusia.frontier.application.CleanupCandidate;
 import net.enthusia.frontier.application.FrontierMutation;
 import net.enthusia.frontier.application.FrontierRepository;
 import net.enthusia.frontier.application.FrontierStats;
 import net.enthusia.frontier.application.FrontierTrackingService;
 import net.enthusia.frontier.application.MutationJournal;
 import net.enthusia.frontier.application.SafetyLatch;
+import net.enthusia.frontier.domain.ChunkKey;
 import net.enthusia.frontier.domain.CoreBoundaryPolicy;
+import net.enthusia.frontier.domain.RegionKey;
 import org.bukkit.Chunk;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -105,6 +108,26 @@ class FrontierListenerTest {
         @Override
         public void applyBatch(List<FrontierMutation> mutations) {
             applied.addAll(mutations);
+        }
+
+        @Override
+        public List<CleanupCandidate> findCleanupCandidates(String worldUuid, Instant cutoff, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public List<RegionKey> findDeletedRegions(String worldUuid, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public boolean isProtected(ChunkKey key) {
+            return false;
+        }
+
+        @Override
+        public boolean isDeleted(ChunkKey key) {
+            return false;
         }
 
         @Override
