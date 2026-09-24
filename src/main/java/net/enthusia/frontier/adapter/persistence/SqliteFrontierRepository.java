@@ -7,15 +7,23 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import net.enthusia.frontier.application.CleanupCandidate;
 import net.enthusia.frontier.application.FrontierMutation;
 import net.enthusia.frontier.application.FrontierRepository;
 import net.enthusia.frontier.application.FrontierStats;
+import net.enthusia.frontier.domain.ChunkKey;
+import net.enthusia.frontier.domain.RegionKey;
 
 /** SQLite implementation of the durable frontier ledger. */
 public final class SqliteFrontierRepository implements FrontierRepository, AutoCloseable {
     private static final int SCHEMA_VERSION = 1;
+    private static final int REGION_SCAN_MULTIPLIER = 32;
     private final Path databasePath;
     private Connection connection;
 
@@ -66,25 +74,34 @@ public final class SqliteFrontierRepository implements FrontierRepository, AutoC
                              + "WHEN frontier_chunk.last_activity_at_ms IS NULL "
                              + "OR excluded.last_activity_at_ms > frontier_chunk.last_activity_at_ms "
                              + "THEN excluded.last_activity_at_ms ELSE frontier_chunk.last_activity_at_ms END, "
-                             + "protected = 1, protection_reason = excluded.protection_reason, deleted_at_ms = NULL")) {
+                             + "protected = 1, protection_reason = excluded.protection_reason, deleted_at_ms = NULL");
+             PreparedStatement deleted = active.prepareStatement(
+                     "UPDATE frontier_chunk SET deleted_at_ms = ? "
+                             + "WHERE world_uuid = ? AND chunk_x = ? AND chunk_z = ? "
+                             + "AND protected = 0 AND deleted_at_ms IS NULL")) {
             for (FrontierMutation mutation : mutations) {
                 if (mutation instanceof FrontierMutation.Generated generatedMutation) {
-                    bindIdentity(generated, generatedMutation);
+                    bindIdentity(generated, generatedMutation, 1);
                     generated.setLong(4, generatedMutation.observedAt().toEpochMilli());
                     generated.addBatch();
                 } else if (mutation instanceof FrontierMutation.Protected protectedEntry) {
-                    bindIdentity(protectedMutation, protectedEntry);
+                    bindIdentity(protectedMutation, protectedEntry, 1);
                     long observedAt = protectedEntry.observedAt().toEpochMilli();
                     protectedMutation.setLong(4, observedAt);
                     protectedMutation.setLong(5, observedAt);
                     protectedMutation.setString(6, protectedEntry.kind().name());
                     protectedMutation.addBatch();
+                } else if (mutation instanceof FrontierMutation.Deleted deletedEntry) {
+                    deleted.setLong(1, deletedEntry.observedAt().toEpochMilli());
+                    bindIdentity(deleted, deletedEntry, 2);
+                    deleted.addBatch();
                 } else {
                     throw new IllegalArgumentException("Unsupported frontier mutation: " + mutation.getClass().getName());
                 }
             }
             generated.executeBatch();
             protectedMutation.executeBatch();
+            deleted.executeBatch();
             active.commit();
         } catch (SQLException | RuntimeException exception) {
             active.rollback();
@@ -92,6 +109,62 @@ public final class SqliteFrontierRepository implements FrontierRepository, AutoC
         } finally {
             active.setAutoCommit(originalAutoCommit);
         }
+    }
+
+    @Override
+    public synchronized List<CleanupCandidate> findCleanupCandidates(
+            String worldUuid, Instant cutoff, int limit) throws SQLException {
+        requirePositiveLimit(limit);
+        Objects.requireNonNull(worldUuid, "worldUuid");
+        Objects.requireNonNull(cutoff, "cutoff");
+        List<CleanupCandidate> result = new ArrayList<>(limit);
+        try (PreparedStatement statement = requireConnection().prepareStatement(
+                "SELECT chunk_x, chunk_z, generated_at_ms FROM frontier_chunk "
+                        + "WHERE world_uuid = ? AND protected = 0 AND deleted_at_ms IS NULL "
+                        + "AND generated_at_ms <= ? ORDER BY generated_at_ms, chunk_x, chunk_z LIMIT ?")) {
+            statement.setString(1, worldUuid);
+            statement.setLong(2, cutoff.toEpochMilli());
+            statement.setInt(3, limit);
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    ChunkKey key = new ChunkKey(worldUuid, rows.getInt(1), rows.getInt(2));
+                    result.add(new CleanupCandidate(key, Instant.ofEpochMilli(rows.getLong(3))));
+                }
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    @Override
+    public synchronized List<RegionKey> findDeletedRegions(String worldUuid, int limit) throws SQLException {
+        requirePositiveLimit(limit);
+        Objects.requireNonNull(worldUuid, "worldUuid");
+        Set<RegionKey> regions = new LinkedHashSet<>();
+        int rowLimit = Math.multiplyExact(limit, REGION_SCAN_MULTIPLIER);
+        try (PreparedStatement statement = requireConnection().prepareStatement(
+                "SELECT chunk_x, chunk_z FROM frontier_chunk "
+                        + "WHERE world_uuid = ? AND deleted_at_ms IS NOT NULL "
+                        + "ORDER BY deleted_at_ms DESC LIMIT ?")) {
+            statement.setString(1, worldUuid);
+            statement.setInt(2, rowLimit);
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next() && regions.size() < limit) {
+                    ChunkKey key = new ChunkKey(worldUuid, rows.getInt(1), rows.getInt(2));
+                    regions.add(RegionKey.fromChunk(key));
+                }
+            }
+        }
+        return List.copyOf(regions);
+    }
+
+    @Override
+    public synchronized boolean isProtected(ChunkKey key) throws SQLException {
+        return readFlag(key, "protected = 1 AND deleted_at_ms IS NULL");
+    }
+
+    @Override
+    public synchronized boolean isDeleted(ChunkKey key) throws SQLException {
+        return readFlag(key, "deleted_at_ms IS NOT NULL");
     }
 
     @Override
@@ -117,6 +190,20 @@ public final class SqliteFrontierRepository implements FrontierRepository, AutoC
         }
         connection.close();
         connection = null;
+    }
+
+    private boolean readFlag(ChunkKey key, String predicate) throws SQLException {
+        Objects.requireNonNull(key, "key");
+        try (PreparedStatement statement = requireConnection().prepareStatement(
+                "SELECT 1 FROM frontier_chunk WHERE world_uuid = ? AND chunk_x = ? AND chunk_z = ? AND "
+                        + predicate + " LIMIT 1")) {
+            statement.setString(1, key.worldUuid());
+            statement.setInt(2, key.x());
+            statement.setInt(3, key.z());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
     }
 
     private void migrate() throws SQLException {
@@ -156,9 +243,16 @@ public final class SqliteFrontierRepository implements FrontierRepository, AutoC
         return connection;
     }
 
-    private static void bindIdentity(PreparedStatement statement, FrontierMutation mutation) throws SQLException {
-        statement.setString(1, mutation.key().worldUuid());
-        statement.setInt(2, mutation.key().x());
-        statement.setInt(3, mutation.key().z());
+    private static void bindIdentity(
+            PreparedStatement statement, FrontierMutation mutation, int startIndex) throws SQLException {
+        statement.setString(startIndex, mutation.key().worldUuid());
+        statement.setInt(startIndex + 1, mutation.key().x());
+        statement.setInt(startIndex + 2, mutation.key().z());
+    }
+
+    private static void requirePositiveLimit(int limit) {
+        if (limit < 1 || limit > 4096) {
+            throw new IllegalArgumentException("limit must be within 1..4096");
+        }
     }
 }

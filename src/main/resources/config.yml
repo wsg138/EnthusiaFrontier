@@ -43,8 +43,17 @@ throttle:
       max-concurrent-generations: 1
 
 cleanup:
-  # Destructive cleanup remains disabled until its real Leaf/Paper acceptance
-  # milestone is complete. Tracking and generation throttling are independent.
+  # Cleanup is implemented but intentionally opt-in. Enable dry-run first on a
+  # production copy and inspect /frontier status before enabling destructive mode.
   enabled: false
   dry-run: true
   untouched-retention-days: 30
+  scan-period-ticks: 1200
+  candidate-batch-size: 128
+  max-chunks-per-tick: 1
+  min-player-distance-chunks: 8
+  max-mspt: 35.0
+  physical-reclaim: true
+  # If destructive cleanup is enabled, refuse startup unless this exact Leaf/Paper
+  # build exposes the validated Moonrise storage adapter.
+  require-supported-adapter: true

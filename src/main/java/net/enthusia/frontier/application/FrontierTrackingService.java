@@ -4,7 +4,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import net.enthusia.frontier.domain.ActivityKind;
 import net.enthusia.frontier.domain.ChunkKey;
 import net.enthusia.frontier.domain.CoreBoundaryPolicy;
@@ -15,6 +17,7 @@ public final class FrontierTrackingService {
     private final int protectionRadiusChunks;
     private final MutationJournal journal;
     private final Clock clock;
+    private final Set<ChunkKey> runtimeProtected = ConcurrentHashMap.newKeySet();
 
     public FrontierTrackingService(
             Map<String, CoreBoundaryPolicy> worldPolicies,
@@ -54,16 +57,26 @@ public final class FrontierTrackingService {
         }
         Instant now = Instant.now(clock);
         int accepted = 0;
+        ChunkKey origin = key(worldUuid, chunkX, chunkZ);
         for (int deltaX = -protectionRadiusChunks; deltaX <= protectionRadiusChunks; deltaX++) {
             for (int deltaZ = -protectionRadiusChunks; deltaZ <= protectionRadiusChunks; deltaZ++) {
-                ChunkKey key = key(worldUuid, chunkX, chunkZ).offset(deltaX, deltaZ);
-                if (policy.isManaged(key)
-                        && journal.submit(new FrontierMutation.Protected(key, now, kind))) {
+                ChunkKey key = origin.offset(deltaX, deltaZ);
+                if (!policy.isManaged(key)) {
+                    continue;
+                }
+                // Protect in memory before the async ledger write. Cleanup consults this
+                // set immediately before deletion, closing the candidate-scan race window.
+                runtimeProtected.add(key);
+                if (journal.submit(new FrontierMutation.Protected(key, now, kind))) {
                     accepted++;
                 }
             }
         }
         return accepted;
+    }
+
+    public boolean isProtectedInMemory(ChunkKey key) {
+        return runtimeProtected.contains(Objects.requireNonNull(key, "key"));
     }
 
     public Map<String, CoreBoundaryPolicy> worldPolicies() {

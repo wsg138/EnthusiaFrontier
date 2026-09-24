@@ -13,7 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import net.enthusia.frontier.domain.ActivityKind;
+import net.enthusia.frontier.domain.ChunkKey;
 import net.enthusia.frontier.domain.CoreBoundaryPolicy;
+import net.enthusia.frontier.domain.RegionKey;
 import org.junit.jupiter.api.Test;
 
 class FrontierTrackingServiceTest {
@@ -25,10 +27,7 @@ class FrontierTrackingServiceTest {
         RecordingRepository repository = new RecordingRepository();
         MutationJournal journal = journal(repository);
         FrontierTrackingService service = new FrontierTrackingService(
-                Map.of("world", new CoreBoundaryPolicy(16)),
-                0,
-                journal,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Map.of("world", new CoreBoundaryPolicy(16)), 0, journal, Clock.fixed(NOW, ZoneOffset.UTC));
 
         journal.start();
         assertFalse(service.recordGenerated("other", WORLD_UUID, 2, 0));
@@ -45,18 +44,18 @@ class FrontierTrackingServiceTest {
     }
 
     @Test
-    void activityProtectsConfiguredRadiusAndPreservesKindAndTimestamp() {
+    void activityProtectsMemoryBeforeDurableWriteAndPreservesRadius() {
         RecordingRepository repository = new RecordingRepository();
         MutationJournal journal = journal(repository);
         FrontierTrackingService service = new FrontierTrackingService(
-                Map.of("world", new CoreBoundaryPolicy(0)),
-                1,
-                journal,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Map.of("world", new CoreBoundaryPolicy(0)), 1, journal, Clock.fixed(NOW, ZoneOffset.UTC));
 
         journal.start();
         assertEquals(0, service.recordActivity("other", WORLD_UUID, 10, 10, ActivityKind.BLOCK_PLACE));
         assertEquals(9, service.recordActivity("world", WORLD_UUID, 10, 10, ActivityKind.BLOCK_PLACE));
+        assertTrue(service.isProtectedInMemory(new ChunkKey(WORLD_UUID.toString(), 9, 9)));
+        assertTrue(service.isProtectedInMemory(new ChunkKey(WORLD_UUID.toString(), 11, 11)));
+        assertFalse(service.isProtectedInMemory(new ChunkKey(WORLD_UUID.toString(), 12, 12)));
         journal.close();
 
         assertEquals(9, repository.applied.size());
@@ -72,7 +71,6 @@ class FrontierTrackingServiceTest {
         MutationJournal journal = journal(new RecordingRepository());
         Map<String, CoreBoundaryPolicy> worlds = Map.of("world", new CoreBoundaryPolicy(0));
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
                 () -> new FrontierTrackingService(worlds, -1, journal, clock));
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
@@ -93,6 +91,26 @@ class FrontierTrackingServiceTest {
         @Override
         public void applyBatch(List<FrontierMutation> mutations) {
             applied.addAll(mutations);
+        }
+
+        @Override
+        public List<CleanupCandidate> findCleanupCandidates(String worldUuid, Instant cutoff, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public List<RegionKey> findDeletedRegions(String worldUuid, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public boolean isProtected(ChunkKey key) {
+            return false;
+        }
+
+        @Override
+        public boolean isDeleted(ChunkKey key) {
+            return false;
         }
 
         @Override

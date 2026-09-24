@@ -7,6 +7,7 @@ import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
@@ -24,6 +25,7 @@ public final class MutationJournal implements AutoCloseable {
     private final int batchSize;
     private final Consumer<String> errorSink;
     private final AtomicBoolean accepting = new AtomicBoolean();
+    private final AtomicInteger pendingMutations = new AtomicInteger();
     private volatile Thread worker;
 
     public MutationJournal(
@@ -59,7 +61,9 @@ public final class MutationJournal implements AutoCloseable {
             safetyLatch.trip("mutation submitted while ledger journal was not accepting writes");
             return false;
         }
+        pendingMutations.incrementAndGet();
         if (!queue.offer(mutation)) {
+            pendingMutations.decrementAndGet();
             safetyLatch.trip("frontier mutation queue overflow; activity history may be incomplete");
             return false;
         }
@@ -70,9 +74,18 @@ public final class MutationJournal implements AutoCloseable {
         return queue.size();
     }
 
+    public int pendingMutations() {
+        return pendingMutations.get();
+    }
+
     public boolean isHealthy() {
         Thread currentWorker = worker;
         return accepting.get() && currentWorker != null && currentWorker.isAlive() && !safetyLatch.isTripped();
+    }
+
+    /** True only after every accepted mutation has durably committed. */
+    public boolean isIdle() {
+        return pendingMutations.get() == 0 && queue.isEmpty() && isHealthy();
     }
 
     @Override
@@ -118,6 +131,7 @@ public final class MutationJournal implements AutoCloseable {
 
             try {
                 repository.applyBatch(batch);
+                pendingMutations.addAndGet(-batch.size());
                 batch.clear();
             } catch (Exception exception) {
                 safetyLatch.trip("frontier ledger durable write failed: " + exception.getClass().getSimpleName());

@@ -1,5 +1,6 @@
 package net.enthusia.frontier.application;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -13,6 +14,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.enthusia.frontier.domain.ChunkKey;
+import net.enthusia.frontier.domain.RegionKey;
 import org.junit.jupiter.api.Test;
 
 class MutationJournalTest {
@@ -32,11 +34,12 @@ class MutationJournalTest {
         assertFalse(journal.submit(generated(0)));
         assertTrue(latch.isTripped());
         assertFalse(journal.isHealthy());
+        assertFalse(journal.isIdle());
         journal.close();
     }
 
     @Test
-    void runningJournalBatchesDurablyAndDrainsOnClose() throws Exception {
+    void runningJournalBatchesDurablyAndExposesExactPendingState() throws Exception {
         RecordingRepository repository = new RecordingRepository();
         RecordingLatch latch = new RecordingLatch();
         MutationJournal journal = new MutationJournal(repository, latch, 128, 16, ignored -> { });
@@ -44,13 +47,16 @@ class MutationJournalTest {
         journal.start();
         assertThrows(IllegalStateException.class, journal::start);
         assertTrue(journal.isHealthy());
+        assertTrue(journal.isIdle());
         for (int index = 0; index < 20; index++) {
             assertTrue(journal.submit(generated(index)));
         }
         assertTrue(repository.firstApply.await(2, TimeUnit.SECONDS));
+        assertTrue(await(journal::isIdle, 2_000));
+        assertEquals(0, journal.pendingMutations());
         journal.close();
 
-        assertTrue(repository.applied.size() == 20);
+        assertEquals(20, repository.applied.size());
         assertFalse(latch.isTripped());
         assertFalse(journal.isHealthy());
         assertFalse(journal.submit(generated(99)));
@@ -88,6 +94,7 @@ class MutationJournalTest {
         }
         assertFalse(journal.submit(generated(129)));
         assertTrue(latch.reason().contains("queue overflow"));
+        assertTrue(journal.pendingMutations() >= 128);
 
         repository.release.countDown();
         journal.close();
@@ -155,6 +162,26 @@ class MutationJournalTest {
         }
 
         @Override
+        public List<CleanupCandidate> findCleanupCandidates(String worldUuid, Instant cutoff, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public List<RegionKey> findDeletedRegions(String worldUuid, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public boolean isProtected(ChunkKey key) {
+            return false;
+        }
+
+        @Override
+        public boolean isDeleted(ChunkKey key) {
+            return false;
+        }
+
+        @Override
         public FrontierStats stats() {
             return new FrontierStats(0, 0, 0);
         }
@@ -181,6 +208,26 @@ class MutationJournalTest {
                     throw new IOException("test release timeout");
                 }
             }
+        }
+
+        @Override
+        public List<CleanupCandidate> findCleanupCandidates(String worldUuid, Instant cutoff, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public List<RegionKey> findDeletedRegions(String worldUuid, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public boolean isProtected(ChunkKey key) {
+            return false;
+        }
+
+        @Override
+        public boolean isDeleted(ChunkKey key) {
+            return false;
         }
 
         @Override

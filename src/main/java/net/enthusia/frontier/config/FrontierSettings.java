@@ -20,11 +20,13 @@ public record FrontierSettings(
         boolean throttleRequired,
         long throttleSamplePeriodTicks,
         double recoveryHysteresisMspt,
-        List<ThrottleLevel> throttleLevels) {
+        List<ThrottleLevel> throttleLevels,
+        CleanupSettings cleanup) {
 
     public FrontierSettings {
         worldPolicies = Map.copyOf(Objects.requireNonNull(worldPolicies, "worldPolicies"));
         throttleLevels = List.copyOf(Objects.requireNonNull(throttleLevels, "throttleLevels"));
+        Objects.requireNonNull(cleanup, "cleanup");
         if (worldPolicies.isEmpty()) {
             throw new IllegalArgumentException("At least one managed world must be enabled");
         }
@@ -77,6 +79,18 @@ public record FrontierSettings(
             throw new IllegalArgumentException("throttle.levels must contain at least one level");
         }
 
+        CleanupSettings cleanup = new CleanupSettings(
+                config.getBoolean("cleanup.enabled", false),
+                config.getBoolean("cleanup.dry-run", true),
+                config.getLong("cleanup.untouched-retention-days", 30L),
+                config.getLong("cleanup.scan-period-ticks", 1200L),
+                config.getInt("cleanup.candidate-batch-size", 128),
+                config.getInt("cleanup.max-chunks-per-tick", 1),
+                config.getInt("cleanup.min-player-distance-chunks", 8),
+                config.getDouble("cleanup.max-mspt", 35.0),
+                config.getBoolean("cleanup.physical-reclaim", true),
+                config.getBoolean("cleanup.require-supported-adapter", true));
+
         return new FrontierSettings(
                 policies,
                 protectionRadius,
@@ -85,7 +99,8 @@ public record FrontierSettings(
                 throttleRequired,
                 samplePeriod,
                 hysteresis,
-                levels);
+                levels,
+                cleanup);
     }
 
     private static ConfigurationSection requireSection(FileConfiguration config, String path) {

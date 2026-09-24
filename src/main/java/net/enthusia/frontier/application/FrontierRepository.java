@@ -1,12 +1,23 @@
 package net.enthusia.frontier.application;
 
+import java.time.Instant;
 import java.util.List;
+import net.enthusia.frontier.domain.ChunkKey;
+import net.enthusia.frontier.domain.RegionKey;
 
 /** Outbound port for the durable frontier ledger. */
 public interface FrontierRepository {
     void initialize() throws Exception;
 
     void applyBatch(List<FrontierMutation> mutations) throws Exception;
+
+    List<CleanupCandidate> findCleanupCandidates(String worldUuid, Instant cutoff, int limit) throws Exception;
+
+    List<RegionKey> findDeletedRegions(String worldUuid, int limit) throws Exception;
+
+    boolean isProtected(ChunkKey key) throws Exception;
+
+    boolean isDeleted(ChunkKey key) throws Exception;
 
     FrontierStats stats() throws Exception;
 

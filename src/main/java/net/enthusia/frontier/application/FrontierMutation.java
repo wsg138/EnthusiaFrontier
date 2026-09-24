@@ -6,7 +6,7 @@ import net.enthusia.frontier.domain.ActivityKind;
 import net.enthusia.frontier.domain.ChunkKey;
 
 /** Immutable mutations written to the Frontier ledger by the asynchronous journal. */
-public sealed interface FrontierMutation permits FrontierMutation.Generated, FrontierMutation.Protected {
+public sealed interface FrontierMutation permits FrontierMutation.Generated, FrontierMutation.Protected, FrontierMutation.Deleted {
     ChunkKey key();
 
     Instant observedAt();
@@ -23,6 +23,13 @@ public sealed interface FrontierMutation permits FrontierMutation.Generated, Fro
             Objects.requireNonNull(key, "key");
             Objects.requireNonNull(observedAt, "observedAt");
             Objects.requireNonNull(kind, "kind");
+        }
+    }
+
+    record Deleted(ChunkKey key, Instant observedAt) implements FrontierMutation {
+        public Deleted {
+            Objects.requireNonNull(key, "key");
+            Objects.requireNonNull(observedAt, "observedAt");
         }
     }
 }
