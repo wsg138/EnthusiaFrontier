@@ -68,7 +68,7 @@ Requirements:
 - never change general chunk loading limits merely to solve generation pressure;
 - expose current MSPT, active band, rate, concurrency and adapter health in status output.
 
-The initial adapter targets Paper/Leaf's `playerMaxChunkGenerateRate` and `playerMaxConcurrentChunkGenerates` runtime configuration. This internal dependency is isolated behind a port and compatibility-tested on real Leaf/Paper.
+The adapter targets Paper/Leaf's `playerMaxChunkGenerateRate` and `playerMaxConcurrentChunkGenerates` runtime configuration. This internal dependency is isolated behind a port and compatibility-tested on real Paper/Leaf-compatible runtime code.
 
 ## 4. Persistent ledger
 
@@ -82,12 +82,14 @@ For each managed chunk it stores at minimum:
 - most recent persistent activity timestamp;
 - protected flag;
 - protection reason;
+- durable reclaim-intent timestamp where applicable;
 - deletion/reclamation timestamp where applicable.
 
 Database requirements:
 
 - WAL mode;
-- schema versioning;
+- full synchronous durability for safety-critical commits;
+- schema versioning/migration;
 - transactional batched mutations;
 - idempotent generation inserts;
 - monotonic protection updates;
@@ -97,12 +99,12 @@ Database requirements:
 
 ## 5. Cleanup safety model
 
-Destructive cleanup is a separate capability from tracking. Tracking must be useful even while cleanup is disabled.
+Destructive cleanup is a separate capability from tracking. Tracking remains useful while cleanup is disabled.
 
 Cleanup defaults:
 
-- `enabled: false` in the first production-capable release until acceptance is complete;
-- dry-run before destructive mode;
+- `enabled: false` and `dry-run: true` in the production configuration;
+- disposable real-server acceptance does not automatically authorize production deletion;
 - untouched retention configurable, initially expected around 30 days;
 - maximum chunks/regions per cycle;
 - minimum player distance;
@@ -110,22 +112,36 @@ Cleanup defaults:
 - no chunks with tickets;
 - no protected ledger entries;
 - no deletion if the persistent safety latch is set;
-- no deletion if the storage adapter cannot prove compatibility.
+- no deletion if the storage adapter cannot prove compatibility;
+- a durable SQLite reclaim intent must commit before the first Moonrise storage mutation.
 
 ### 5.1 Logical chunk removal vs physical disk reclamation
 
 Clearing an Anvil chunk slot is not sufficient evidence that disk usage was reclaimed; region files may retain allocated space. Frontier therefore distinguishes:
 
 1. **logical reclaim** — remove CHUNK_DATA, ENTITY_DATA and POI_DATA so the terrain regenerates on next visit; and
-2. **physical reclaim** — prove that filesystem allocation actually decreases or safely compact/delete an empty region container.
+2. **physical reclaim** — prove that filesystem allocation actually decreases or safely delete an empty region container.
 
 The storage goal is physical reclaim. A cleanup implementation is not considered complete merely because deleted chunks regenerate.
 
 ### 5.2 Region-level proof
 
-Before physical reclamation, Frontier must prove the targeted region is safe using both its ledger and the actual on-disk region occupancy. Untracked occupied chunks are protected, not guessed disposable.
+Before physical reclamation, Frontier must prove the targeted region is safe using both its ledger and actual on-disk region occupancy. Untracked occupied chunks are protected, not guessed disposable.
 
-Raw region-file deletion while Paper/Leaf may have the file open is prohibited. Runtime adapters must use supported/synchronized server storage mechanisms or a controlled maintenance path with atomic replacement and crash recovery.
+Raw region-file deletion while Paper/Leaf may have the file open is prohibited. Runtime adapters must use supported/synchronized server storage mechanisms or a controlled maintenance path with crash-safe ordering.
+
+### 5.3 Crash ordering
+
+Destructive ordering is:
+
+1. commit durable reclaim intent;
+2. re-check runtime safety;
+3. logically clear chunk/entity/POI data;
+4. durably mark deletion;
+5. prove the whole region container is empty and not open;
+6. physically reclaim the empty container.
+
+Interrupted intents survive restart and are recovered before new destructive candidates are reserved. If durable finalization fails after logical clear, cleanup latches unsafe instead of continuing.
 
 ## 6. Failure behavior
 
@@ -139,14 +155,14 @@ Any of these disable cleanup while preserving tracking where possible:
 - inconsistent world UUID/name mapping;
 - on-disk occupancy that does not match tracked candidates;
 - player/ticket/load state uncertainty;
-- interrupted compaction/reclamation journal;
+- invalid/missing durable reclaim intent;
 - failed integrity verification.
 
 Generation throttling failure is separately visible. If `throttle.require-supported-adapter` is true, plugin enable must fail rather than silently run without the promised generation protection.
 
 ## 7. Operator interface
 
-`/frontier status` must report:
+`/frontier status` reports:
 
 - plugin version;
 - managed worlds/core radii;
@@ -156,9 +172,9 @@ Generation throttling failure is separately visible. If `throttle.require-suppor
 - mutation queue depth/health;
 - persistent cleanup safety-latch state;
 - tracked temporary/protected/deleted counts;
-- cleanup mode once implemented.
+- cleanup mode and bounded cleanup counters.
 
-Future destructive commands require explicit permissions and confirmation tokens. There will be no casual `/frontier delete` command.
+There is no casual production `/frontier delete` command. The destructive acceptance entrypoint requires an exact confirmation token and is additionally fenced to the isolated Sentinel console/runtime conditions.
 
 ## 8. Configuration guarantees
 
@@ -173,7 +189,8 @@ World identity in persistence uses UUID, while configuration selects worlds by n
 - event handlers do constant/small bounded work on the tick thread;
 - database writes occur off-thread in batches;
 - no full-world or full-database scan on a tick thread;
-- cleanup scans are bounded and resumable;
+- cleanup scans/reservations are bounded and asynchronous;
+- destructive world/storage work is bounded per tick;
 - generation-limit changes occur only on band transitions;
 - status queries may perform bounded database reads but must not be used in hot paths.
 
@@ -185,25 +202,25 @@ The domain/application layers must not import Bukkit, Paper, Leaf, NMS, SQLite, 
 
 ## 11. Acceptance requirements
 
-A release that enables destructive cleanup must prove all of the following:
+Before production destructive cleanup is enabled, evidence must cover:
 
 - core radius `0` manages newly generated test-world chunks;
 - positive core radius never schedules core/intersecting chunks for cleanup;
 - activity protection survives restart;
 - mutation overload latches cleanup unsafe and never loses that state across restart;
 - throttle bands apply/recover with hysteresis and restore original Paper settings on disable;
-- many simultaneous explorers do not produce unacceptable MSPT degradation under the test profile;
+- generation pressure is bounded by the configured adaptive limits under the target workload;
 - untouched chunks can be logically regenerated after reclaim;
-- protected chunks are byte/behavior preserved through cleanup runs;
+- protected chunks are behaviorally preserved through cleanup runs;
 - CHUNK_DATA, ENTITY_DATA and POI_DATA are handled consistently;
-- real filesystem usage is reclaimed in physical-reclaim tests;
-- crash/interruption tests never leave a world unrecoverably corrupt;
-- exact-head Sentinel Sim and real Enthusia Staging checks pass.
+- real region-file usage is reclaimed in physical-reclaim tests;
+- interrupted reclaim intent is recoverable across restart and persistence failure fails closed;
+- exact-head hosted CI/artifact and real Enthusia Sentinel/Staging checks pass.
 
 ## 12. Non-goals
 
 - replacing the Minecraft world border;
 - deleting the existing 100k pregenerated core;
 - heuristic deletion of unknown old terrain;
-- modifying production worlds before staging acceptance;
+- modifying production worlds during acceptance;
 - pretending MockBukkit can validate Moonrise/NMS region storage.
