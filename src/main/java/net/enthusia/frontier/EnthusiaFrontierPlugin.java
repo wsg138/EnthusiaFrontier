@@ -12,12 +12,14 @@ import net.enthusia.frontier.adapter.bukkit.FrontierListener;
 import net.enthusia.frontier.adapter.paper.PaperGenerationThrottleAdapter;
 import net.enthusia.frontier.adapter.persistence.FileSafetyLatch;
 import net.enthusia.frontier.adapter.persistence.SqliteFrontierRepository;
+import net.enthusia.frontier.adapter.simulation.SimulationGenerationThrottleAdapter;
 import net.enthusia.frontier.application.AdaptiveThrottleService;
 import net.enthusia.frontier.application.FrontierStats;
 import net.enthusia.frontier.application.FrontierTrackingService;
 import net.enthusia.frontier.application.GenerationThrottlePort;
 import net.enthusia.frontier.application.MutationJournal;
 import net.enthusia.frontier.application.SafetyLatch;
+import net.enthusia.frontier.application.ServerPerformancePort;
 import net.enthusia.frontier.config.FrontierSettings;
 import net.enthusia.frontier.domain.AdaptiveThrottlePolicy;
 import net.enthusia.frontier.domain.CoreBoundaryPolicy;
@@ -28,6 +30,9 @@ import org.bukkit.scheduler.BukkitTask;
 
 /** Bukkit/Paper composition root for the Frontier hexagonal application. */
 public final class EnthusiaFrontierPlugin extends JavaPlugin {
+    private static final String MOCKBUKKIT_PACKAGE_PREFIX = "org.mockbukkit.";
+    private static final double SIMULATED_MSPT = 20.0;
+
     private FrontierSettings settings;
     private SqliteFrontierRepository repository;
     private SafetyLatch safetyLatch;
@@ -35,7 +40,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
     private AdaptiveThrottleService throttleService;
     private GenerationThrottlePort throttlePort;
     private BukkitTask throttleTask;
-    private boolean throttleCompatible;
+    private String throttleAdapterMode = "uninitialized";
 
     @Override
     public void onEnable() {
@@ -83,7 +88,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
             try {
                 throttleService.restore();
             } catch (Exception exception) {
-                getLogger().log(Level.SEVERE, "Failed to restore original Paper generation limits", exception);
+                getLogger().log(Level.SEVERE, "Failed to restore original generation limits", exception);
             }
         }
         if (mutationJournal != null) {
@@ -99,28 +104,37 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
     }
 
     private void initializeThrottle() throws Exception {
-        try {
-            PaperGenerationThrottleAdapter adapter = PaperGenerationThrottleAdapter.create();
-            throttlePort = adapter;
-            throttleCompatible = true;
-        } catch (ReflectiveOperationException | RuntimeException exception) {
-            throttleCompatible = false;
-            if (settings.throttleRequired()) {
-                throw new IllegalStateException(
-                        "This Paper/Leaf build does not expose Frontier's validated generation-throttle adapter",
+        ServerPerformancePort performancePort;
+        if (isMockBukkitRuntime()) {
+            throttlePort = new SimulationGenerationThrottleAdapter();
+            throttleAdapterMode = "simulation";
+            performancePort = () -> SIMULATED_MSPT;
+            getLogger().info("MockBukkit runtime detected; using simulation-only throttle adapter. "
+                    + "This does not validate Paper/Leaf chunk-generation internals.");
+        } else {
+            try {
+                throttlePort = PaperGenerationThrottleAdapter.create();
+                throttleAdapterMode = "paper";
+                performancePort = () -> getServer().getAverageTickTime();
+            } catch (ReflectiveOperationException | RuntimeException exception) {
+                throttleAdapterMode = "unsupported";
+                if (settings.throttleRequired()) {
+                    throw new IllegalStateException(
+                            "This Paper/Leaf build does not expose Frontier's validated generation-throttle adapter",
+                            exception);
+                }
+                getLogger().log(Level.WARNING,
+                        "Generation throttle adapter unavailable; tracking will continue because throttle.require-supported-adapter=false",
                         exception);
+                return;
             }
-            getLogger().log(Level.WARNING,
-                    "Generation throttle adapter unavailable; tracking will continue because throttle.require-supported-adapter=false",
-                    exception);
-            return;
         }
 
         AdaptiveThrottlePolicy policy = new AdaptiveThrottlePolicy(
                 settings.throttleLevels(), settings.recoveryHysteresisMspt());
         throttleService = new AdaptiveThrottleService(
                 policy,
-                () -> getServer().getAverageTickTime(),
+                performancePort,
                 Objects.requireNonNull(throttlePort));
         sampleThrottle();
         throttleTask = getServer().getScheduler().runTaskTimer(
@@ -128,6 +142,10 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 this::sampleThrottle,
                 settings.throttleSamplePeriodTicks(),
                 settings.throttleSamplePeriodTicks());
+    }
+
+    private boolean isMockBukkitRuntime() {
+        return getServer().getClass().getName().startsWith(MOCKBUKKIT_PACKAGE_PREFIX);
     }
 
     private void sampleThrottle() {
@@ -170,14 +188,15 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
         lines.add("§7managed worlds: §f" + worlds);
 
         ThrottleLevel level = throttleService == null ? null : throttleService.currentLevel();
-        String throttleStatus = !throttleCompatible
+        String throttleStatus = throttleAdapterMode.equals("unsupported")
                 ? "unsupported"
                 : level == null
                         ? "initializing"
                         : level.name() + " rate=" + level.limits().maxGenerateRate()
                                 + "/s concurrent=" + level.limits().maxConcurrentGenerations();
-        double mspt = throttleService == null ? getServer().getAverageTickTime() : throttleService.lastMspt();
-        lines.add(String.format("§7MSPT: §f%.2f §7throttle: §f%s", mspt, throttleStatus));
+        double mspt = throttleService == null ? 0.0 : throttleService.lastMspt();
+        lines.add(String.format("§7MSPT: §f%.2f §7throttle: §f%s §7adapter: §f%s",
+                mspt, throttleStatus, throttleAdapterMode));
 
         if (mutationJournal != null) {
             lines.add("§7ledger queue: §f" + mutationJournal.queueDepth()

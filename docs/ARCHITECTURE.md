@@ -56,11 +56,13 @@ Durable ledger operations. Initial adapter: SQLite.
 
 ### GenerationThrottlePort
 
-Applies/restores per-player chunk-generation limits. Initial adapter: reflective Paper global configuration. Reflection is contained here because these fields are not a stable Bukkit API.
+Applies/restores per-player chunk-generation limits. Production adapter: reflective Paper global configuration. Reflection is contained here because these fields are not a stable Bukkit API.
+
+Sentinel Sim uses a deliberately separate MockBukkit-only recording adapter. It exists only so simulation can exercise plugin lifecycle/policy wiring; it is not evidence that Paper/Leaf generation internals work.
 
 ### ServerPerformancePort
 
-Returns recent average MSPT. Initial adapter uses Paper's public `Server#getAverageTickTime()`.
+Returns recent average MSPT. Production adapter uses Paper's public `Server#getAverageTickTime()`. MockBukkit does not implement that method, so Sentinel Sim supplies a fixed healthy sample while real MSPT behavior remains a Staging responsibility.
 
 ### ChunkStoragePort (cleanup milestone)
 
@@ -82,7 +84,7 @@ If the queue cannot accept a mutation, Frontier immediately marks its in-memory 
 
 Paper/Leaf internal configuration and Moonrise storage are expected to evolve. Their exact class/field/method names must not leak into domain/application code.
 
-Adapters perform explicit startup probes. Unsupported internals produce a visible compatibility failure, never a guessed reflective fallback.
+Adapters perform explicit startup probes. Unsupported production internals produce a visible compatibility failure, never a guessed reflective fallback. The only non-Paper exception is the explicitly detected `org.mockbukkit.*` simulation runtime used by Sentinel tests.
 
 ## Destructive storage design
 

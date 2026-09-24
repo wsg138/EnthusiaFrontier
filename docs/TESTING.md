@@ -37,14 +37,16 @@ Sentinel's centrally owned profile should test behavior that simulation can hone
 - `/frontier status` command permission/shape;
 - generation/activity event ingestion where supported;
 - core-radius `0` semantics;
-- block place/break/interact protection paths;
+- block place/break/interact protection paths when those actions are available in the simulator;
 - queue safety state;
 - clean disable/re-enable and data persistence where the profile backend supports it;
 - fuzzing event order around generation/activity/restart boundaries.
 
+MockBukkit does not implement Paper's real MSPT sampler or Paper/Moonrise generation configuration. Frontier therefore detects the `org.mockbukkit.*` server implementation and uses a simulation-only generation adapter plus a fixed healthy MSPT sample. This is only lifecycle/policy plumbing evidence and must never be cited as validation of production generation throttling.
+
 Sentinel Sim must **not** claim to validate Paper internal generation controls, Moonrise deletes, Anvil allocation or physical disk reclamation. Those belong to real Paper/Leaf.
 
-The preferred integration is the existing Enthusia Sentinel GitHub App and a centrally approved `profiles/enthusia-frontier/...` policy entry.
+The preferred integration is the existing Enthusia Sentinel GitHub App and a centrally approved `profiles/github-app/enthusiafrontier-pr-load.json` policy entry.
 
 ## 3. Enthusia Staging
 
