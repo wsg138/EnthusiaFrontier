@@ -159,12 +159,28 @@ public final class SqliteFrontierRepository implements FrontierRepository, AutoC
 
     @Override
     public synchronized boolean isProtected(ChunkKey key) throws SQLException {
-        return readFlag(key, "protected = 1 AND deleted_at_ms IS NULL");
+        Objects.requireNonNull(key, "key");
+        try (PreparedStatement statement = requireConnection().prepareStatement(
+                "SELECT 1 FROM frontier_chunk WHERE world_uuid = ? AND chunk_x = ? AND chunk_z = ? "
+                        + "AND protected = 1 AND deleted_at_ms IS NULL LIMIT 1")) {
+            bindKey(statement, key);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
     }
 
     @Override
     public synchronized boolean isDeleted(ChunkKey key) throws SQLException {
-        return readFlag(key, "deleted_at_ms IS NOT NULL");
+        Objects.requireNonNull(key, "key");
+        try (PreparedStatement statement = requireConnection().prepareStatement(
+                "SELECT 1 FROM frontier_chunk WHERE world_uuid = ? AND chunk_x = ? AND chunk_z = ? "
+                        + "AND deleted_at_ms IS NOT NULL LIMIT 1")) {
+            bindKey(statement, key);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
     }
 
     @Override
@@ -190,20 +206,6 @@ public final class SqliteFrontierRepository implements FrontierRepository, AutoC
         }
         connection.close();
         connection = null;
-    }
-
-    private boolean readFlag(ChunkKey key, String predicate) throws SQLException {
-        Objects.requireNonNull(key, "key");
-        try (PreparedStatement statement = requireConnection().prepareStatement(
-                "SELECT 1 FROM frontier_chunk WHERE world_uuid = ? AND chunk_x = ? AND chunk_z = ? AND "
-                        + predicate + " LIMIT 1")) {
-            statement.setString(1, key.worldUuid());
-            statement.setInt(2, key.x());
-            statement.setInt(3, key.z());
-            try (ResultSet result = statement.executeQuery()) {
-                return result.next();
-            }
-        }
     }
 
     private void migrate() throws SQLException {
@@ -248,6 +250,12 @@ public final class SqliteFrontierRepository implements FrontierRepository, AutoC
         statement.setString(startIndex, mutation.key().worldUuid());
         statement.setInt(startIndex + 1, mutation.key().x());
         statement.setInt(startIndex + 2, mutation.key().z());
+    }
+
+    private static void bindKey(PreparedStatement statement, ChunkKey key) throws SQLException {
+        statement.setString(1, key.worldUuid());
+        statement.setInt(2, key.x());
+        statement.setInt(3, key.z());
     }
 
     private static void requirePositiveLimit(int limit) {
