@@ -22,6 +22,15 @@ public interface FrontierRepository {
         throw new UnsupportedOperationException("durable cleanup reservation is not implemented");
     }
 
+    /**
+     * Atomically reserves exactly the supplied unprotected tracked chunks.
+     * This is used by destructive runtime acceptance so the proof follows the same crash-ordering invariant.
+     */
+    default List<CleanupCandidate> reserveSpecificCleanupCandidates(
+            List<ChunkKey> keys, Instant reservedAt) throws Exception {
+        throw new UnsupportedOperationException("specific cleanup reservation is not implemented");
+    }
+
     List<RegionKey> findDeletedRegions(String worldUuid, int limit) throws Exception;
 
     boolean isProtected(ChunkKey key) throws Exception;
