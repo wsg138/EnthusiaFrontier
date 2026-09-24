@@ -2,6 +2,10 @@ name: Real Paper Reclaim Acceptance
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -57,7 +61,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: paper-reclaim-acceptance-${{ github.event.pull_request.head.sha }}
+          name: paper-reclaim-acceptance-${{ github.event.pull_request.head.sha || github.sha }}
           if-no-files-found: warn
           retention-days: 14
           path: |
