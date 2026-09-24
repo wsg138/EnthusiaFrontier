@@ -17,6 +17,7 @@ val releaseVersionValue = providers.gradleProperty("releaseVersion").get()
 val minecraftVersionValue = providers.gradleProperty("minecraftVersion").get()
 val paperApiVersionValue = providers.gradleProperty("paperApiVersion").get()
 val javaVersionValue = providers.gradleProperty("javaVersion").get()
+val resourceExpansion = mapOf("version" to releaseVersionValue)
 version = releaseVersionValue
 
 // These are source-controlled compatibility invariants. Validate them while the
@@ -43,6 +44,7 @@ dependencies {
 
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("org.mockito:mockito-core:5.20.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -67,9 +69,10 @@ tasks.withType<Test>().configureEach {
 }
 
 tasks.processResources {
-    inputs.property("pluginVersion", releaseVersionValue)
+    inputs.properties(resourceExpansion)
+    filteringCharset = "UTF-8"
     filesMatching("plugin.yml") {
-        expand("version" to releaseVersionValue)
+        expand(resourceExpansion)
     }
 }
 

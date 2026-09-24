@@ -1,6 +1,7 @@
 package net.enthusia.frontier;
 
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
@@ -212,7 +213,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 lines.add("§7chunks: temporary=§f" + stats.temporaryChunks()
                         + " §7protected=§f" + stats.protectedChunks()
                         + " §7deleted=§f" + stats.deletedChunks());
-            } catch (Exception exception) {
+            } catch (SQLException exception) {
                 lines.add("§7chunks: §cledger stats unavailable");
             }
         }
