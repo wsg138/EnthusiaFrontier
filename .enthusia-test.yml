@@ -1,0 +1,15 @@
+schema_version: 1
+plugin:
+  id: enthusiafrontier
+  name: EnthusiaFrontier
+  main_class: net.enthusia.frontier.EnthusiaFrontierPlugin
+artifact:
+  name: sentinel-plugin
+  jar_path: plugin.jar
+profiles:
+  - startup
+  - restart
+configs: []
+databases: []
+dependencies: []
+actions: []
