@@ -64,8 +64,11 @@ public final class McaRegionFileInspector {
         }
         try (DirectoryStream<Path> entries = Files.newDirectoryStream(folder, prefix + "*")) {
             for (Path entry : entries) {
-                String name = entry.getFileName().toString();
-                if (!name.equals(mcaName)) {
+                Path fileName = entry.getFileName();
+                if (fileName == null) {
+                    throw new IOException("region directory entry has no filename");
+                }
+                if (!fileName.toString().equals(mcaName)) {
                     return true;
                 }
             }
@@ -102,7 +105,11 @@ public final class McaRegionFileInspector {
         }
         try (DirectoryStream<Path> entries = Files.newDirectoryStream(folder, "c.*.mcc")) {
             for (Path entry : entries) {
-                Matcher matcher = EXTERNAL_CHUNK.matcher(entry.getFileName().toString());
+                Path fileName = entry.getFileName();
+                if (fileName == null) {
+                    throw new IOException("external chunk sidecar has no filename");
+                }
+                Matcher matcher = EXTERNAL_CHUNK.matcher(fileName.toString());
                 if (!matcher.matches()) {
                     continue;
                 }
