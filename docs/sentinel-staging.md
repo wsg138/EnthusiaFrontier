@@ -1,22 +1,15 @@
 # Frontier automated staging
 
-EnthusiaFrontier uses both existing Enthusia test systems. They cover different trust boundaries and neither substitutes for the other.
+EnthusiaFrontier uses two real-Paper validation paths plus normal CI. They cover different trust boundaries and must not be conflated.
 
-## Enthusia Sentinel Sim
+## Enthusia Sentinel shared staging
 
-`wsg138/EnthusiaSentinel-Sim` owns Frontier's MockBukkit profile. Frontier publishes the exact PR-head artifact as:
+`wsg138/EnthusiaStaff-Staging` owns the trusted rootless Paper service. Frontier publishes the exact PR-head artifact as:
 
 - Actions artifact: `sentinel-plugin`
 - plugin path inside the artifact: `plugin.jar`
 
-Simulation validates plugin lifecycle/policy plumbing only. It does **not** validate Paper/Leaf generation internals, Moonrise storage, vanilla chunk generation or physical disk reclamation.
-
-## Enthusia Staff Staging
-
-`wsg138/EnthusiaStaff-Staging` is the shared real-Paper staging service. Frontier's schema-1 `.enthusia-test.yml` exposes:
-
-- `startup`
-- `restart`
+Frontier declares `startup` and `restart` in `.enthusia-test.yml`.
 
 On an open, non-draft same-repository Frontier pull request, an authorized operator can request:
 
@@ -25,13 +18,25 @@ On an open, non-draft same-repository Frontier pull request, an authorized opera
 @enthusia-sentinel test restart
 ```
 
-Sentinel binds the request to the exact immutable Frontier commit, validates the manifest, resolves only a successful exact-SHA `sentinel-plugin` Actions artifact, and runs the plugin in its disposable rootless Paper executor under shared queue/resource gates.
+Sentinel binds the request to the exact immutable Frontier commit and successful exact-SHA artifact. `startup` proves the plugin can load and shut down cleanly in the trusted Paper sandbox. `restart` proves two clean Paper cycles against one disposable state directory.
 
-`startup` proves real Paper class loading, reflective generation/storage adapter compatibility, SQLite startup and clean shutdown.
+The current generic Sentinel restart executor validates manifest actions but does not execute arbitrary Frontier `before-shutdown` / `after-restart` console actions. Therefore Frontier's manifest intentionally contains no such dead actions, and `PAPER_RESTART_OK` is treated as compatibility/restart evidence rather than destructive-reclaim evidence.
 
-`restart` additionally runs the isolated destructive acceptance actions declared by Frontier's manifest. Before the first shutdown it executes the guarded `frontier acceptance prepare` phase and waits for `FRONTIER_ACCEPTANCE_PREPARED`. After restart it executes `frontier acceptance verify` and waits for `FRONTIER_ACCEPTANCE_RECLAIM_OK`.
+## Real Paper destructive acceptance
 
-That acceptance covers actual Moonrise logical chunk/entity/POI deletion, durable ledger state across restart, fully empty MCA physical unlink, byte reduction, protected marker preservation and regenerated terrain persistence.
+The repository's `Real Paper Reclaim Acceptance` workflow performs the destructive proof directly on a disposable Paper 1.21.11 server. It records the resolved Paper runtime URL/SHA-256 and the exact Frontier JAR SHA-256, boots the same server state twice, and drives the guarded console acceptance command around the restart.
+
+Required evidence markers are:
+
+```text
+FRONTIER_ACCEPTANCE_PREPARED
+FRONTIER_ACCEPTANCE_RECLAIM_OK
+FRONTIER_REAL_PAPER_ACCEPTANCE_OK
+```
+
+The workflow fails if Frontier emits `FRONTIER_ACCEPTANCE_FAILED`, either Paper process exits unexpectedly, the durable acceptance state is missing after prepare, or that state remains after verification.
+
+The acceptance command additionally proves Moonrise logical chunk/entity/POI deletion, durable reclaim-intent/deletion/protection state, fully empty MCA physical unlink, byte reduction, protected marker preservation and regenerated terrain persistence.
 
 ## Destructive safety fence
 
@@ -48,6 +53,6 @@ A normal Enthusia server therefore refuses the acceptance command even if an ope
 
 ## Production boundary
 
-Cleanup code ships **disabled and dry-run by default**. Passing disposable staging proves the capability; it does not silently authorize production deletion. Production enablement remains a deliberate rollout decision after dry-run observation and backup/candidate review.
+Cleanup ships **disabled and dry-run by default**. Passing both real-Paper validation paths proves the capability; it does not silently authorize production deletion.
 
-Staging uses Paper/Moonrise. Enthusia uses Leaf, so the exact production Leaf build is still protected by startup compatibility probes: when the storage/generation adapters are required, unsupported internals fail startup rather than falling back to guessed reflection.
+Enthusia uses Leaf, so the exact production Leaf build is still protected by Frontier's startup compatibility probes. If required generation or Moonrise internals do not match the validated adapter, Frontier fails closed instead of guessing.

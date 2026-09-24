@@ -179,6 +179,63 @@ public final class SqliteFrontierRepository implements FrontierRepository, AutoC
     }
 
     @Override
+    public synchronized List<CleanupCandidate> reserveSpecificCleanupCandidates(
+            List<ChunkKey> keys, Instant reservedAt) throws SQLException {
+        Objects.requireNonNull(keys, "keys");
+        Objects.requireNonNull(reservedAt, "reservedAt");
+        if (keys.isEmpty() || keys.size() > 4096 || new LinkedHashSet<>(keys).size() != keys.size()) {
+            throw new IllegalArgumentException("specific cleanup keys must contain 1..4096 unique chunks");
+        }
+
+        Connection active = requireConnection();
+        boolean originalAutoCommit = active.getAutoCommit();
+        active.setAutoCommit(false);
+        try (PreparedStatement read = active.prepareStatement(
+                "SELECT generated_at_ms, reclaim_intent_at_ms FROM frontier_chunk "
+                        + "WHERE world_uuid = ? AND chunk_x = ? AND chunk_z = ? "
+                        + "AND protected = 0 AND deleted_at_ms IS NULL");
+             PreparedStatement reserve = active.prepareStatement(
+                     "UPDATE frontier_chunk SET reclaim_intent_at_ms = ? "
+                             + "WHERE world_uuid = ? AND chunk_x = ? AND chunk_z = ? "
+                             + "AND protected = 0 AND deleted_at_ms IS NULL AND reclaim_intent_at_ms IS NULL")) {
+            List<CleanupCandidate> result = new ArrayList<>(keys.size());
+            for (ChunkKey key : keys) {
+                bindKey(read, key, 1);
+                long generatedAt;
+                Long existingIntent;
+                try (ResultSet row = read.executeQuery()) {
+                    if (!row.next()) {
+                        throw new SQLException("specific cleanup candidate is missing or protected: " + key);
+                    }
+                    generatedAt = row.getLong(1);
+                    long intentValue = row.getLong(2);
+                    existingIntent = row.wasNull() ? null : intentValue;
+                }
+
+                Instant effectiveIntent;
+                if (existingIntent == null) {
+                    reserve.setLong(1, reservedAt.toEpochMilli());
+                    bindKey(reserve, key, 2);
+                    if (reserve.executeUpdate() != 1) {
+                        throw new SQLException("specific cleanup candidate changed while reserving: " + key);
+                    }
+                    effectiveIntent = reservedAt;
+                } else {
+                    effectiveIntent = Instant.ofEpochMilli(existingIntent);
+                }
+                result.add(new CleanupCandidate(key, Instant.ofEpochMilli(generatedAt), effectiveIntent));
+            }
+            active.commit();
+            return List.copyOf(result);
+        } catch (SQLException | RuntimeException exception) {
+            active.rollback();
+            throw exception;
+        } finally {
+            active.setAutoCommit(originalAutoCommit);
+        }
+    }
+
+    @Override
     public synchronized List<RegionKey> findDeletedRegions(String worldUuid, int limit) throws SQLException {
         requirePositiveLimit(limit);
         Objects.requireNonNull(worldUuid, "worldUuid");

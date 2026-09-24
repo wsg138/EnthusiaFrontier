@@ -12,20 +12,4 @@ profiles:
 configs: []
 databases: []
 dependencies: []
-actions:
-  - profile: restart
-    stage: before-shutdown
-    type: console-command
-    command: frontier acceptance prepare I_UNDERSTAND_DISPOSABLE_WORLD
-  - profile: restart
-    stage: before-shutdown
-    type: wait-log
-    contains: FRONTIER_ACCEPTANCE_PREPARED
-  - profile: restart
-    stage: after-restart
-    type: console-command
-    command: frontier acceptance verify I_UNDERSTAND_DISPOSABLE_WORLD
-  - profile: restart
-    stage: after-restart
-    type: wait-log
-    contains: FRONTIER_ACCEPTANCE_RECLAIM_OK
+actions: []

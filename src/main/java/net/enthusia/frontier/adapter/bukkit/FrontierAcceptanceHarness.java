@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.logging.Level;
+import net.enthusia.frontier.application.CleanupCandidate;
 import net.enthusia.frontier.application.FrontierMutation;
 import net.enthusia.frontier.application.FrontierRepository;
 import net.enthusia.frontier.application.FrontierTrackingService;
@@ -33,7 +34,7 @@ import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
- * Destructive end-to-end proof used only by the isolated Sentinel real-Paper sandbox.
+ * Destructive end-to-end proof used only by an isolated real-Paper sandbox.
  * It is intentionally inaccessible on a normal server even to an operator with permission.
  */
 public final class FrontierAcceptanceHarness {
@@ -185,6 +186,18 @@ public final class FrontierAcceptanceHarness {
             int markerY,
             int markerZ) {
         try {
+            Instant reservedAt = Instant.now();
+            List<CleanupCandidate> reserved = repository.reserveSpecificCleanupCandidates(occupied, reservedAt);
+            if (reserved.size() != occupied.size()) {
+                throw new IllegalStateException("acceptance reclaim-intent reservation was incomplete");
+            }
+            for (int index = 0; index < occupied.size(); index++) {
+                CleanupCandidate candidate = reserved.get(index);
+                if (!candidate.key().equals(occupied.get(index)) || !candidate.hasReclaimIntent()) {
+                    throw new IllegalStateException("acceptance reclaim intent did not match occupied storage");
+                }
+            }
+
             long beforeBytes = regionBytes(world, region);
             for (ChunkKey key : occupied) {
                 storage.clearChunk(world.getName(), key);
@@ -193,48 +206,64 @@ public final class FrontierAcceptanceHarness {
                 }
             }
             storage.flushWorld(world.getName(), world.getUID().toString());
-            waitForIdle(sender, 0, () -> {
-                try {
-                    for (ChunkKey key : occupied) {
-                        if (!repository.isDeleted(key)) {
-                            throw new IllegalStateException("acceptance deletion marker was not durable");
-                        }
-                    }
-                    ChunkKey protectedKey = new ChunkKey(world.getUID().toString(), protectedX, protectedZ);
-                    if (!repository.isProtected(protectedKey)) {
-                        throw new IllegalStateException("protected acceptance chunk was not durable");
-                    }
-                    long afterLogicalBytes = regionBytes(world, region);
-                    Properties state = new Properties();
-                    state.setProperty("world", world.getName());
-                    state.setProperty("uuid", world.getUID().toString());
-                    state.setProperty("region-x", Integer.toString(region.x()));
-                    state.setProperty("region-z", Integer.toString(region.z()));
-                    state.setProperty("candidate-x", Integer.toString(candidateX));
-                    state.setProperty("candidate-z", Integer.toString(candidateZ));
-                    state.setProperty("protected-x", Integer.toString(protectedX));
-                    state.setProperty("protected-z", Integer.toString(protectedZ));
-                    state.setProperty("marker-x", Integer.toString(markerX));
-                    state.setProperty("marker-y", Integer.toString(markerY));
-                    state.setProperty("marker-z", Integer.toString(markerZ));
-                    state.setProperty("bytes-before", Long.toString(beforeBytes));
-                    state.setProperty("bytes-after-logical", Long.toString(afterLogicalBytes));
-                    writeState(state);
-                    plugin.getLogger().info("FRONTIER_ACCEPTANCE_PREPARED region="
-                            + region.x() + "," + region.z()
-                            + " occupied=" + occupied.size()
-                            + " bytesBefore=" + beforeBytes
-                            + " bytesAfterLogical=" + afterLogicalBytes);
-                } catch (RuntimeException exception) {
-                    fail(sender, "acceptance prepare durability verification failed", exception);
-                } catch (Exception exception) {
-                    fail(sender, "acceptance prepare durability verification failed", exception);
-                }
-            });
+            waitForIdle(sender, 0, () -> verifyPreparedState(
+                    sender, world, region, occupied, candidateX, candidateZ,
+                    protectedX, protectedZ, markerX, markerY, markerZ, beforeBytes));
         } catch (RuntimeException exception) {
             fail(sender, "acceptance logical reclaim failed", exception);
         } catch (Exception exception) {
             fail(sender, "acceptance logical reclaim failed", exception);
+        }
+    }
+
+    private void verifyPreparedState(
+            CommandSender sender,
+            World world,
+            RegionKey region,
+            List<ChunkKey> occupied,
+            int candidateX,
+            int candidateZ,
+            int protectedX,
+            int protectedZ,
+            int markerX,
+            int markerY,
+            int markerZ,
+            long beforeBytes) {
+        try {
+            for (ChunkKey key : occupied) {
+                if (!repository.isDeleted(key)) {
+                    throw new IllegalStateException("acceptance deletion marker was not durable");
+                }
+            }
+            ChunkKey protectedKey = new ChunkKey(world.getUID().toString(), protectedX, protectedZ);
+            if (!repository.isProtected(protectedKey)) {
+                throw new IllegalStateException("protected acceptance chunk was not durable");
+            }
+            long afterLogicalBytes = regionBytes(world, region);
+            Properties state = new Properties();
+            state.setProperty("world", world.getName());
+            state.setProperty("uuid", world.getUID().toString());
+            state.setProperty("region-x", Integer.toString(region.x()));
+            state.setProperty("region-z", Integer.toString(region.z()));
+            state.setProperty("candidate-x", Integer.toString(candidateX));
+            state.setProperty("candidate-z", Integer.toString(candidateZ));
+            state.setProperty("protected-x", Integer.toString(protectedX));
+            state.setProperty("protected-z", Integer.toString(protectedZ));
+            state.setProperty("marker-x", Integer.toString(markerX));
+            state.setProperty("marker-y", Integer.toString(markerY));
+            state.setProperty("marker-z", Integer.toString(markerZ));
+            state.setProperty("bytes-before", Long.toString(beforeBytes));
+            state.setProperty("bytes-after-logical", Long.toString(afterLogicalBytes));
+            writeState(state);
+            plugin.getLogger().info("FRONTIER_ACCEPTANCE_PREPARED region="
+                    + region.x() + "," + region.z()
+                    + " occupied=" + occupied.size()
+                    + " bytesBefore=" + beforeBytes
+                    + " bytesAfterLogical=" + afterLogicalBytes);
+        } catch (RuntimeException exception) {
+            fail(sender, "acceptance prepare durability verification failed", exception);
+        } catch (Exception exception) {
+            fail(sender, "acceptance prepare durability verification failed", exception);
         }
     }
 

@@ -3,6 +3,7 @@ package net.enthusia.frontier.adapter.persistence;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -103,6 +104,43 @@ class SqliteFrontierRepositoryTest {
             assertTrue(reopened.isProtected(candidateKey));
             assertTrue(reopened.reserveCleanupCandidates(
                     "world", reserved.plusSeconds(120), 10, reserved.plusSeconds(3)).isEmpty());
+        }
+    }
+
+    @Test
+    void specificReservationIsAtomicExactAndRejectsProtectedOrMissingChunks() throws Exception {
+        Path database = temporaryDirectory.resolve("specific.db");
+        Instant generated = Instant.parse("2026-01-01T00:00:00Z");
+        Instant reserved = generated.plusSeconds(120);
+        ChunkKey first = new ChunkKey("world", 8, 9);
+        ChunkKey second = new ChunkKey("world", -8, -9);
+        ChunkKey protectedChunk = new ChunkKey("world", 10, 11);
+
+        try (SqliteFrontierRepository repository = new SqliteFrontierRepository(database)) {
+            repository.initialize();
+            repository.applyBatch(List.of(
+                    new FrontierMutation.Generated(first, generated),
+                    new FrontierMutation.Generated(second, generated.plusSeconds(1)),
+                    new FrontierMutation.Generated(protectedChunk, generated),
+                    new FrontierMutation.Protected(protectedChunk, generated.plusSeconds(2), ActivityKind.BLOCK_PLACE)));
+
+            List<CleanupCandidate> selected = repository.reserveSpecificCleanupCandidates(
+                    List.of(second, first), reserved);
+            assertEquals(List.of(second, first), selected.stream().map(CleanupCandidate::key).toList());
+            assertTrue(selected.stream().allMatch(CleanupCandidate::hasReclaimIntent));
+            assertTrue(selected.stream().allMatch(candidate -> reserved.equals(candidate.reclaimIntentAt())));
+
+            assertEquals(
+                    reserved,
+                    repository.reserveSpecificCleanupCandidates(List.of(first), reserved.plusSeconds(1))
+                            .getFirst().reclaimIntentAt());
+            assertThrows(
+                    Exception.class,
+                    () -> repository.reserveSpecificCleanupCandidates(List.of(protectedChunk), reserved));
+            assertThrows(
+                    Exception.class,
+                    () -> repository.reserveSpecificCleanupCandidates(
+                            List.of(new ChunkKey("world", 999, 999)), reserved));
         }
     }
 
