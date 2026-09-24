@@ -98,6 +98,9 @@ tasks.withType<SpotBugsTask>().configureEach {
     reports.create("html") {
         required.set(true)
     }
+    reports.create("xml") {
+        required.set(true)
+    }
 }
 
 jacoco {
