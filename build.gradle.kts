@@ -17,7 +17,6 @@ val releaseVersionValue = providers.gradleProperty("releaseVersion").get()
 val minecraftVersionValue = providers.gradleProperty("minecraftVersion").get()
 val paperApiVersionValue = providers.gradleProperty("paperApiVersion").get()
 val javaVersionValue = providers.gradleProperty("javaVersion").get()
-val resourceExpansion = mapOf("version" to releaseVersionValue)
 version = releaseVersionValue
 
 // These are source-controlled compatibility invariants. Validate them while the
@@ -44,6 +43,7 @@ dependencies {
 
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("io.papermc.paper:paper-api:$paperApiVersionValue")
     testImplementation("org.mockito:mockito-core:5.20.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
@@ -66,14 +66,6 @@ tasks.withType<Test>().configureEach {
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
     finalizedBy(tasks.jacocoTestReport)
-}
-
-tasks.processResources {
-    inputs.properties(resourceExpansion)
-    filteringCharset = "UTF-8"
-    filesMatching("plugin.yml") {
-        expand(resourceExpansion)
-    }
 }
 
 tasks.withType<ShadowJar>().configureEach {

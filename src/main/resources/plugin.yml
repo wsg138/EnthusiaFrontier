@@ -1,5 +1,5 @@
 name: EnthusiaFrontier
-version: '${version}'
+version: '0.1.0-SNAPSHOT'
 main: net.enthusia.frontier.EnthusiaFrontierPlugin
 api-version: '1.21.11'
 author: Enthusia
