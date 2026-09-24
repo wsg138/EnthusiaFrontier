@@ -165,6 +165,8 @@ public final class FrontierAcceptanceHarness {
             waitForIdle(sender, 0, () -> clearAcceptanceRegion(
                     sender, world, region, occupied, candidateX, candidateZ,
                     protectedX, protectedZ, markerX, markerY, markerZ));
+        } catch (RuntimeException exception) {
+            fail(sender, "acceptance prepare failed", exception);
         } catch (Exception exception) {
             fail(sender, "acceptance prepare failed", exception);
         }
@@ -223,10 +225,14 @@ public final class FrontierAcceptanceHarness {
                             + " occupied=" + occupied.size()
                             + " bytesBefore=" + beforeBytes
                             + " bytesAfterLogical=" + afterLogicalBytes);
+                } catch (RuntimeException exception) {
+                    fail(sender, "acceptance prepare durability verification failed", exception);
                 } catch (Exception exception) {
                     fail(sender, "acceptance prepare durability verification failed", exception);
                 }
             });
+        } catch (RuntimeException exception) {
+            fail(sender, "acceptance logical reclaim failed", exception);
         } catch (Exception exception) {
             fail(sender, "acceptance logical reclaim failed", exception);
         }
@@ -236,6 +242,9 @@ public final class FrontierAcceptanceHarness {
         Properties state;
         try {
             state = readState();
+        } catch (RuntimeException exception) {
+            fail(sender, "acceptance state could not be read", exception);
+            return;
         } catch (Exception exception) {
             fail(sender, "acceptance state could not be read", exception);
             return;
@@ -291,6 +300,8 @@ public final class FrontierAcceptanceHarness {
                 plugin.getServer().getScheduler().runTaskLater(plugin, () -> finishRegenerationProof(
                         sender, world, candidate, beforePhysical, afterPhysical), 20L);
             });
+        } catch (RuntimeException exception) {
+            fail(sender, "acceptance verification failed", exception);
         } catch (Exception exception) {
             fail(sender, "acceptance verification failed", exception);
         }
@@ -307,6 +318,8 @@ public final class FrontierAcceptanceHarness {
             plugin.getLogger().info("FRONTIER_ACCEPTANCE_RECLAIM_OK bytesBeforePhysical="
                     + beforePhysical + " bytesAfterPhysical=" + afterPhysical);
             sender.sendMessage("§aFrontier real-server reclaim acceptance passed.");
+        } catch (RuntimeException exception) {
+            fail(sender, "acceptance regeneration proof failed", exception);
         } catch (Exception exception) {
             fail(sender, "acceptance regeneration proof failed", exception);
         }
@@ -360,7 +373,11 @@ public final class FrontierAcceptanceHarness {
     }
 
     private void writeState(Properties state) throws IOException {
-        Files.createDirectories(stateFile.getParent());
+        Path parent = stateFile.getParent();
+        if (parent == null) {
+            throw new IOException("acceptance state path has no parent directory");
+        }
+        Files.createDirectories(parent);
         Path temporary = stateFile.resolveSibling(stateFile.getFileName() + ".tmp");
         try (OutputStream output = Files.newOutputStream(
                 temporary, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
