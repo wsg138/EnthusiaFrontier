@@ -12,11 +12,25 @@ plugins {
 }
 
 group = "net.enthusia.frontier"
-version = providers.gradleProperty("releaseVersion").get()
 
+val releaseVersionValue = providers.gradleProperty("releaseVersion").get()
 val minecraftVersionValue = providers.gradleProperty("minecraftVersion").get()
 val paperApiVersionValue = providers.gradleProperty("paperApiVersion").get()
 val javaVersionValue = providers.gradleProperty("javaVersion").get()
+version = releaseVersionValue
+
+// These are source-controlled compatibility invariants. Validate them while the
+// build model is created so the check is configuration-cache safe and cannot be
+// bypassed by skipping a particular verification task.
+check(minecraftVersionValue == "1.21.11") {
+    "Minecraft baseline changed without an intentional platform migration."
+}
+check(paperApiVersionValue == "1.21.11-R0.1-SNAPSHOT") {
+    "Paper API baseline changed without an intentional platform migration."
+}
+check(javaVersionValue == "21") {
+    "Java baseline changed without an intentional platform migration."
+}
 
 repositories {
     mavenCentral()
@@ -53,9 +67,9 @@ tasks.withType<Test>().configureEach {
 }
 
 tasks.processResources {
-    inputs.property("version", project.version)
+    inputs.property("pluginVersion", releaseVersionValue)
     filesMatching("plugin.yml") {
-        expand("version" to project.version)
+        expand("version" to releaseVersionValue)
     }
 }
 
@@ -116,27 +130,11 @@ tasks.jacocoTestCoverageVerification {
     }
 }
 
-tasks.check {
-    dependsOn(tasks.spotbugsMain, tasks.jacocoTestCoverageVerification)
-}
-
 tasks.register("verifyCurrentPlatformBaseline") {
-    inputs.property("minecraftVersion", minecraftVersionValue)
-    inputs.property("paperApiVersion", paperApiVersionValue)
-    inputs.property("javaVersion", javaVersionValue)
-    doLast {
-        check(minecraftVersionValue == "1.21.11") {
-            "Minecraft baseline changed without an intentional platform migration."
-        }
-        check(paperApiVersionValue == "1.21.11-R0.1-SNAPSHOT") {
-            "Paper API baseline changed without an intentional platform migration."
-        }
-        check(javaVersionValue == "21") {
-            "Java baseline changed without an intentional platform migration."
-        }
-    }
+    group = "verification"
+    description = "Compatibility alias; platform baseline is validated during build configuration."
 }
 
 tasks.check {
-    dependsOn("verifyCurrentPlatformBaseline")
+    dependsOn(tasks.spotbugsMain, tasks.jacocoTestCoverageVerification, "verifyCurrentPlatformBaseline")
 }

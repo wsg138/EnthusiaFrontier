@@ -19,10 +19,15 @@ class CoreBoundaryPolicyTest {
     void positiveRadiusKeepsIntersectingBoundaryChunksPermanent() {
         CoreBoundaryPolicy policy = new CoreBoundaryPolicy(100_000);
         assertFalse(policy.isManaged(new ChunkKey(WORLD, 0, 0)));
+
+        // +6250 covers blocks 100000..100015, so it intersects the permanent core.
         assertFalse(policy.isManaged(new ChunkKey(WORLD, 6_250, 0)));
-        assertFalse(policy.isManaged(new ChunkKey(WORLD, -6_251, 0)));
         assertTrue(policy.isManaged(new ChunkKey(WORLD, 6_251, 0)));
-        assertTrue(policy.isManaged(new ChunkKey(WORLD, -6_252, 0)));
+
+        // -6250 covers -100000..-99985 and intersects the core. -6251 covers
+        // -100016..-100001 and is completely outside, so it is managed.
+        assertFalse(policy.isManaged(new ChunkKey(WORLD, -6_250, 0)));
+        assertTrue(policy.isManaged(new ChunkKey(WORLD, -6_251, 0)));
     }
 
     @Test
