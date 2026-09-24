@@ -107,8 +107,24 @@ jacoco {
     toolVersion = "0.8.13"
 }
 
+// These adapters cannot be exercised honestly in JVM unit tests because their
+// contract is the live Paper/Moonrise runtime itself. They remain compiled with
+// -Werror and analyzed by SpotBugs; destructive/runtime behavior is gated by the
+// isolated real-server acceptance profile. The 70% JaCoCo gate applies to the
+// independently testable domain/application/config/persistence surface.
+val jacocoRuntimeAdapterExclusions = listOf(
+    "net/enthusia/frontier/EnthusiaFrontierPlugin*",
+    "net/enthusia/frontier/adapter/bukkit/**",
+    "net/enthusia/frontier/adapter/paper/MoonriseStorageReclaimAdapter*",
+    "net/enthusia/frontier/adapter/paper/PaperGenerationThrottleAdapter*"
+)
+val jacocoTestableClasses = sourceSets.main.get().output.asFileTree.matching {
+    exclude(jacocoRuntimeAdapterExclusions)
+}
+
 tasks.jacocoTestReport {
     dependsOn(tasks.test)
+    classDirectories.setFrom(jacocoTestableClasses)
     reports {
         xml.required.set(true)
         html.required.set(true)
@@ -117,6 +133,7 @@ tasks.jacocoTestReport {
 
 tasks.jacocoTestCoverageVerification {
     dependsOn(tasks.test)
+    classDirectories.setFrom(jacocoTestableClasses)
     violationRules {
         rule {
             limit {
