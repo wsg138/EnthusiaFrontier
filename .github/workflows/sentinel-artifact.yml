@@ -1,0 +1,38 @@
+name: Sentinel Plugin Artifact
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Build exact-head plugin
+        run: gradle clean check shadowJar --no-daemon
+      - name: Stage stable Sentinel contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p sentinel-out
+          mapfile -t jars < <(find build/libs -maxdepth 1 -type f -name 'EnthusiaFrontier-*.jar' | sort)
+          test "${#jars[@]}" -eq 1
+          cp "${jars[0]}" sentinel-out/plugin.jar
+          sha256sum sentinel-out/plugin.jar | tee sentinel-out/plugin.jar.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-plugin
+          if-no-files-found: error
+          retention-days: 7
+          path: sentinel-out/
