@@ -1,45 +1,53 @@
 # Frontier automated staging
 
-EnthusiaFrontier uses both existing Enthusia test systems. They cover different trust boundaries and neither should be treated as a substitute for the other.
+EnthusiaFrontier uses both existing Enthusia test systems. They cover different trust boundaries and neither substitutes for the other.
 
 ## Enthusia Sentinel Sim
 
-`wsg138/EnthusiaSentinel-Sim` owns Frontier's central MockBukkit profile. Frontier publishes the exact PR-head artifact as:
+`wsg138/EnthusiaSentinel-Sim` owns Frontier's MockBukkit profile. Frontier publishes the exact PR-head artifact as:
 
 - Actions artifact: `sentinel-plugin`
 - plugin path inside the artifact: `plugin.jar`
 
-The Sim profile loads the plugin, waits for asynchronous startup, runs `frontier status`, keeps a simulated player online, explores bounded status/no-op sequences, and rejects severe logs.
-
-Frontier deliberately detects MockBukkit and uses `SimulationGenerationThrottleAdapter`. That adapter only records requested limits. A passing Sim check does **not** prove real Paper/Leaf MSPT sampling, Paper internal generation-limit fields, Moonrise storage behavior, vanilla chunk generation, or physical disk reclamation.
+Simulation validates plugin lifecycle/policy plumbing only. It does **not** validate Paper/Leaf generation internals, Moonrise storage, vanilla chunk generation or physical disk reclamation.
 
 ## Enthusia Staff Staging
 
-`wsg138/EnthusiaStaff-Staging` is the existing shared real-Paper staging service. Frontier's schema-1 `.enthusia-test.yml` declares only:
+`wsg138/EnthusiaStaff-Staging` is the shared real-Paper staging service. Frontier's schema-1 `.enthusia-test.yml` exposes:
 
 - `startup`
 - `restart`
 
-The initial onboarding is manual-only. On an open, non-draft same-repository Frontier pull request, an authorized operator can request:
+On an open, non-draft same-repository Frontier pull request, an authorized operator can request:
 
 ```text
 @enthusia-sentinel test startup
 @enthusia-sentinel test restart
 ```
 
-Sentinel binds the request to the exact immutable Frontier commit, validates this manifest, resolves only a successful exact-SHA `sentinel-plugin` Actions artifact, and runs the plugin in its disposable rootless Paper executor under the shared one-heavy/resource gates.
+Sentinel binds the request to the exact immutable Frontier commit, validates the manifest, resolves only a successful exact-SHA `sentinel-plugin` Actions artifact, and runs the plugin in its disposable rootless Paper executor under shared queue/resource gates.
 
-These profiles prove substantially more than MockBukkit for this milestone: real Paper class loading, the reflective Paper generation-throttle adapter, SQLite startup, clean shutdown, and restart persistence/lifecycle behavior. They still do **not** authorize or validate destructive world-storage reclamation.
+`startup` proves real Paper class loading, reflective generation/storage adapter compatibility, SQLite startup and clean shutdown.
 
-## Destructive cleanup boundary
+`restart` additionally runs the isolated destructive acceptance actions declared by Frontier's manifest. Before the first shutdown it executes the guarded `frontier acceptance prepare` phase and waits for `FRONTIER_ACCEPTANCE_PREPARED`. After restart it executes `frontier acceptance verify` and waits for `FRONTIER_ACCEPTANCE_RECLAIM_OK`.
 
-Destructive region cleanup is intentionally disabled in the current Frontier milestone. Before it can be enabled by default, a later acceptance package must use a real Leaf/Paper environment with Moonrise storage and prove all of the following with disposable data:
+That acceptance covers actual Moonrise logical chunk/entity/POI deletion, durable ledger state across restart, fully empty MCA physical unlink, byte reduction, protected marker preservation and regenerated terrain persistence.
 
-1. only eligible frontier chunks/regions are selected;
-2. protected/core/player-activity data cannot be reclaimed;
-3. server quiescence and storage synchronization are correct;
-4. restart/recovery after interruption is safe;
-5. physical disk usage is actually reduced;
-6. regenerated terrain remains valid after revisiting reclaimed space.
+## Destructive safety fence
 
-No MockBukkit result or ordinary startup/restart result may be presented as evidence for those destructive-storage claims.
+The acceptance command only operates when all of these are true:
+
+- sender is the server console;
+- exact confirmation token is supplied;
+- server is loopback-bound to `127.0.0.1`;
+- no players are online;
+- `max-players <= 2`;
+- MOTD is exactly Sentinel's isolated smoke-test MOTD.
+
+A normal Enthusia server therefore refuses the acceptance command even if an operator knows the token.
+
+## Production boundary
+
+Cleanup code ships **disabled and dry-run by default**. Passing disposable staging proves the capability; it does not silently authorize production deletion. Production enablement remains a deliberate rollout decision after dry-run observation and backup/candidate review.
+
+Staging uses Paper/Moonrise. Enthusia uses Leaf, so the exact production Leaf build is still protected by startup compatibility probes: when the storage/generation adapters are required, unsupported internals fail startup rather than falling back to guessed reflection.

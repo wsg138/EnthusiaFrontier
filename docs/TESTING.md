@@ -1,6 +1,6 @@
 # Testing Strategy
 
-Frontier has two kinds of risk and therefore two different test backends.
+Frontier has policy/persistence risk and real Paper/Moonrise storage risk, so validation is split across unit CI, Sentinel Sim and isolated real-server staging.
 
 ## 1. Normal CI
 
@@ -13,12 +13,15 @@ gradle clean check shadowJar --no-daemon
 Required gates:
 
 - Java 21 compilation with `-Xlint:all -Werror`;
-- JUnit tests;
-- SQLite adapter integration tests using temporary databases;
+- JUnit domain/application/config tests;
+- SQLite integration tests using temporary databases, including durable reclaim-intent restart recovery;
+- MCA header/negative-coordinate/sidecar tests;
 - SpotBugs at max effort / low-confidence reporting with failures enforced;
-- JaCoCo line coverage gate;
+- 70% JaCoCo line coverage over the independently unit-testable core/persistence surface;
 - reproducible shaded deployable JAR;
 - production platform-baseline guard.
+
+Real Bukkit/Paper/Moonrise runtime adapters are not counted in the JaCoCo denominator because JVM tests cannot execute their real contract honestly. They are still compiled with warnings-as-errors, analyzed by SpotBugs, and must pass the real-server profile below.
 
 ## 2. Enthusia Sentinel Sim
 
@@ -31,71 +34,57 @@ artifact: sentinel-plugin
 plugin JAR: plugin.jar
 ```
 
-Sentinel's centrally owned profile should test behavior that simulation can honestly model:
-
-- plugin boot/config validation;
-- `/frontier status` command permission/shape;
-- generation/activity event ingestion where supported;
-- core-radius `0` semantics;
-- block place/break/interact protection paths when those actions are available in the simulator;
-- queue safety state;
-- clean disable/re-enable and data persistence where the profile backend supports it;
-- fuzzing event order around generation/activity/restart boundaries.
-
-MockBukkit does not implement Paper's real MSPT sampler or Paper/Moonrise generation configuration. Frontier therefore detects the `org.mockbukkit.*` server implementation and uses a simulation-only generation adapter plus a fixed healthy MSPT sample. This is only lifecycle/policy plumbing evidence and must never be cited as validation of production generation throttling.
-
-Sentinel Sim must **not** claim to validate Paper internal generation controls, Moonrise deletes, Anvil allocation or physical disk reclamation. Those belong to real Paper/Leaf.
-
-The preferred integration is the existing Enthusia Sentinel GitHub App and a centrally approved `profiles/github-app/enthusiafrontier-pr-load.json` policy entry.
+Simulation is useful for plugin lifecycle and policy plumbing. It must not be cited as proof of Paper generation internals, Moonrise deletion, Anvil allocation, or physical disk reclamation.
 
 ## 3. Enthusia Staging
 
 Repository: `wsg138/EnthusiaStaff-Staging`
 
-Staging owns real-server acceptance because Frontier depends on real Paper/Leaf world generation and eventually Moonrise region storage.
+The repository manifest exposes `startup` and `restart` against a disposable rootless Paper sandbox. The restart profile additionally drives Frontier's isolated destructive acceptance harness:
 
-The Frontier staging profile should use a disposable world and `core-radius-blocks: 0` so every generated chunk is under management.
+1. generate a far-away disposable region;
+2. create and persist protected activity in a separate control region;
+3. record/flush actual Moonrise storage occupancy;
+4. logically clear disposable CHUNK_DATA, ENTITY_DATA and POI_DATA;
+5. persist deletion/protection state;
+6. restart the server against the same disposable state;
+7. prove deletion/protection state survived restart;
+8. physically reclaim the now-empty region container;
+9. verify allocated region-file bytes decrease;
+10. verify the protected marker remains intact;
+11. regenerate the reclaimed chunk and prove it persists correctly.
 
-Minimum real-server scenarios:
+The destructive entrypoint is fenced to console, the exact confirmation token, loopback bind, an empty server, maximum two player slots and Sentinel's isolated-test MOTD. It is not a general administrator delete command.
 
-1. clean boot and restart with a fresh ledger;
-2. exact-head artifact provenance validation;
-3. generate virgin terrain with controlled explorers;
-4. verify database generation records match observed chunks;
-5. create a base/activity area and verify its protection survives restart;
-6. drive synthetic load/MSPT and verify throttle band transitions and recovery;
-7. prove original Paper generation settings restore on plugin disable;
-8. dry-run cleanup candidate report;
-9. later, logical deletion/regeneration acceptance;
-10. later, physical disk reclamation measurement;
-11. later, kill/crash at every destructive journal phase and verify recovery;
-12. verify no production world/database/credentials are reachable from the disposable profile.
-
-The staging workflow must not modify the existing production or shared test worlds. Frontier destructive tests require a dedicated disposable world directory and explicit path guards.
+The staging executor validates Paper/Moonrise behavior. Because Enthusia production uses Leaf, rollout must still retain Frontier's startup compatibility probe on the exact installed Leaf build; unsupported internals fail startup when the adapter is required.
 
 ## 4. Storage acceptance metrics
 
-A physical-reclaim test records before/after:
+Physical-reclaim evidence includes:
 
-- logical occupied chunk count in `region`, `entities`, and `poi`;
-- file sizes;
-- allocated filesystem blocks where available (`du`/stat evidence);
-- SQLite ledger candidate/protection counts;
-- regenerated chunk hashes/behavior where appropriate;
-- protected-area checksums/snapshots.
+- logical occupied chunk state across `region`, `entities`, and `poi`;
+- region-file bytes before logical/physical reclaim;
+- SQLite deletion/protection state across restart;
+- successful regeneration after reclaim;
+- protected marker preservation.
 
-A test only passes the storage goal when allocated disk usage is actually reclaimed. Clearing the region header alone is not sufficient.
+Clearing a region header without reducing storage is not considered physical reclaim.
 
-## 5. Exact-head rule
+## 5. Crash/recovery evidence
 
-Runtime evidence applies only to the exact plugin source SHA and exact produced JAR hash. Any code or safety-relevant test change invalidates prior runtime evidence.
+Normal CI proves the ordering invariant that destructive candidates require a SQLite-committed reclaim intent and that an intent is recovered after repository restart. The runtime path re-checks journal/MSPT/player/load/ticket/activity safety before Moonrise mutation. If final deletion persistence fails after logical clear, the persistent safety latch disables further cleanup while the durable intent remains available for diagnosis/recovery.
 
-## 6. Production rollout order
+## 6. Exact-head rule
+
+Runtime evidence applies only to the exact plugin source SHA and exact produced JAR. Any code, safety-relevant configuration or acceptance change invalidates prior runtime evidence.
+
+## 7. Production rollout order
 
 1. zero-core disposable staging world;
 2. generation throttling enabled, cleanup disabled;
-3. tracking/protection soak test;
-4. cleanup dry-run only;
-5. destructive cleanup on disposable staging data;
-6. production with `100000` permanent core and destructive cleanup still dry-run;
-7. owner-reviewed destructive enable only after observed candidate reports and real disk-reclaim evidence are clean.
+3. tracking/protection soak;
+4. cleanup enabled in dry-run only;
+5. inspect candidate reports/status and backup behavior;
+6. destructive cleanup on disposable staging data;
+7. production with the `100000` permanent core and destructive cleanup still dry-run;
+8. explicit owner-reviewed destructive enable only after observed candidate reports and real disk-reclaim evidence are clean.
