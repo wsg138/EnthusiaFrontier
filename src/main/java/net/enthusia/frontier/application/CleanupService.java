@@ -53,6 +53,10 @@ public final class CleanupService {
         if (settings.dryRun()) {
             return CleanupResult.DRY_RUN;
         }
+        if (!candidate.hasReclaimIntent()) {
+            safetyLatch.trip("destructive cleanup candidate lacked durable reclaim intent");
+            return CleanupResult.LATCHED;
+        }
 
         storage.clearChunk(worldName, key);
         if (!journal.submit(new FrontierMutation.Deleted(key, Instant.now(clock)))) {

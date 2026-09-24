@@ -2,6 +2,7 @@ package net.enthusia.frontier.adapter.persistence;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -37,8 +38,14 @@ class SqliteFrontierRepositoryTest {
                     new FrontierMutation.Generated(protectedChunk, first),
                     new FrontierMutation.Protected(protectedChunk, later, ActivityKind.BLOCK_PLACE),
                     new FrontierMutation.Generated(protectedChunk, later),
-                    new FrontierMutation.Generated(deletedNegative, first),
-                    new FrontierMutation.Deleted(deletedNegative, later)));
+                    new FrontierMutation.Generated(deletedNegative, first)));
+            CleanupCandidate reservedDeleted = repository.reserveCleanupCandidates(
+                    "world-a", later.plusSeconds(1), 10, later.plusSeconds(2)).stream()
+                    .filter(candidate -> candidate.key().equals(deletedNegative))
+                    .findFirst()
+                    .orElseThrow();
+            assertTrue(reservedDeleted.hasReclaimIntent());
+            repository.applyBatch(List.of(new FrontierMutation.Deleted(deletedNegative, later.plusSeconds(3))));
 
             FrontierStats stats = repository.stats();
             assertEquals(1, stats.temporaryChunks());
@@ -49,8 +56,8 @@ class SqliteFrontierRepositoryTest {
             assertTrue(repository.isDeleted(deletedNegative));
 
             List<CleanupCandidate> candidates = repository.findCleanupCandidates(
-                    "world-a", later.plusSeconds(1), 10);
-            assertEquals(List.of(temporary), candidates.stream().map(CleanupCandidate::key).toList());
+                    "world-a", later.plusSeconds(4), 10);
+            assertTrue(candidates.isEmpty(), "temporary chunk was reserved by the earlier destructive scan");
             assertEquals(List.of(new RegionKey("world-a", -2, -3)), repository.findDeletedRegions("world-a", 10));
         }
 
@@ -58,9 +65,44 @@ class SqliteFrontierRepositoryTest {
             reopened.initialize();
             assertTrue(reopened.isProtected(protectedChunk));
             assertTrue(reopened.isDeleted(deletedNegative));
-            reopened.applyBatch(List.of(new FrontierMutation.Generated(deletedNegative, later.plusSeconds(1))));
+            reopened.applyBatch(List.of(new FrontierMutation.Generated(deletedNegative, later.plusSeconds(5))));
             assertFalse(reopened.isDeleted(deletedNegative));
             assertEquals(2, reopened.stats().temporaryChunks());
+        }
+    }
+
+    @Test
+    void reclaimIntentIsCommittedBeforeReturnAndRecoveredAcrossRestart() throws Exception {
+        Path database = temporaryDirectory.resolve("intent.db");
+        ChunkKey candidateKey = new ChunkKey("world", 40, -41);
+        Instant generated = Instant.parse("2026-01-01T00:00:00Z");
+        Instant reserved = generated.plusSeconds(120);
+
+        try (SqliteFrontierRepository repository = new SqliteFrontierRepository(database)) {
+            repository.initialize();
+            repository.applyBatch(List.of(new FrontierMutation.Generated(candidateKey, generated)));
+            List<CleanupCandidate> selected = repository.reserveCleanupCandidates(
+                    "world", generated.plusSeconds(60), 10, reserved);
+            assertEquals(1, selected.size());
+            assertEquals(candidateKey, selected.getFirst().key());
+            assertEquals(reserved, selected.getFirst().reclaimIntentAt());
+            assertTrue(repository.findCleanupCandidates("world", reserved, 10).isEmpty());
+        }
+
+        try (SqliteFrontierRepository reopened = new SqliteFrontierRepository(database)) {
+            reopened.initialize();
+            List<CleanupCandidate> recovered = reopened.reserveCleanupCandidates(
+                    "world", reserved.plusSeconds(60), 10, reserved.plusSeconds(1));
+            assertEquals(1, recovered.size());
+            assertEquals(candidateKey, recovered.getFirst().key());
+            assertEquals(reserved, recovered.getFirst().reclaimIntentAt());
+            assertNotNull(recovered.getFirst().reclaimIntentAt());
+
+            reopened.applyBatch(List.of(new FrontierMutation.Protected(
+                    candidateKey, reserved.plusSeconds(2), ActivityKind.BLOCK_PLACE)));
+            assertTrue(reopened.isProtected(candidateKey));
+            assertTrue(reopened.reserveCleanupCandidates(
+                    "world", reserved.plusSeconds(120), 10, reserved.plusSeconds(3)).isEmpty());
         }
     }
 

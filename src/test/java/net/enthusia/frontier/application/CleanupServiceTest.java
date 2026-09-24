@@ -24,10 +24,10 @@ class CleanupServiceTest {
     private static final UUID WORLD_UUID = UUID.fromString("00000000-0000-0000-0000-000000000123");
 
     @Test
-    void dryRunNeverTouchesStorage() throws Exception {
+    void dryRunNeverTouchesStorageOrRequiresReservation() throws Exception {
         Fixture fixture = new Fixture(settings(true), 20.0, true);
         try {
-            CleanupResult result = fixture.service.process("world", fixture.candidate());
+            CleanupResult result = fixture.service.process("world", fixture.candidate(false));
             assertEquals(CleanupResult.DRY_RUN, result);
             assertEquals(0, fixture.storage.clears);
         } finally {
@@ -36,16 +36,29 @@ class CleanupServiceTest {
     }
 
     @Test
-    void destructiveClearPersistsDeletedMarkerBeforeRegionCanBeReclaimed() throws Exception {
+    void destructiveClearRequiresDurableIntentAndPersistsDeletedMarkerBeforeRegionReclaim() throws Exception {
         Fixture fixture = new Fixture(settings(false), 20.0, true);
         try {
-            assertEquals(CleanupResult.CLEARED, fixture.service.process("world", fixture.candidate()));
+            CleanupCandidate candidate = fixture.candidate(true);
+            assertEquals(CleanupResult.CLEARED, fixture.service.process("world", candidate));
             assertTrue(await(fixture.journal::isIdle));
             assertEquals(1, fixture.storage.clears);
             assertTrue(fixture.repository.applied.stream().anyMatch(FrontierMutation.Deleted.class::isInstance));
             assertEquals(
                     RegionReclaimResult.RECLAIMED,
-                    fixture.service.reclaim("world", RegionKey.fromChunk(fixture.candidate().key())));
+                    fixture.service.reclaim("world", RegionKey.fromChunk(candidate.key())));
+        } finally {
+            fixture.close();
+        }
+    }
+
+    @Test
+    void missingDurableIntentTripsLatchBeforeStorageMutation() throws Exception {
+        Fixture fixture = new Fixture(settings(false), 20.0, true);
+        try {
+            assertEquals(CleanupResult.LATCHED, fixture.service.process("world", fixture.candidate(false)));
+            assertTrue(fixture.latch.isTripped());
+            assertEquals(0, fixture.storage.clears);
         } finally {
             fixture.close();
         }
@@ -57,7 +70,7 @@ class CleanupServiceTest {
         try {
             protectedFixture.tracking.recordActivity("world", WORLD_UUID, 10, 11, ActivityKind.BLOCK_PLACE);
             assertTrue(await(protectedFixture.journal::isIdle));
-            assertEquals(CleanupResult.PROTECTED, protectedFixture.service.process("world", protectedFixture.candidate()));
+            assertEquals(CleanupResult.PROTECTED, protectedFixture.service.process("world", protectedFixture.candidate(true)));
             assertEquals(0, protectedFixture.storage.clears);
         } finally {
             protectedFixture.close();
@@ -65,7 +78,7 @@ class CleanupServiceTest {
 
         Fixture pressured = new Fixture(settings(false), 40.0, true);
         try {
-            assertEquals(CleanupResult.DEFERRED, pressured.service.process("world", pressured.candidate()));
+            assertEquals(CleanupResult.DEFERRED, pressured.service.process("world", pressured.candidate(true)));
         } finally {
             pressured.close();
         }
@@ -73,7 +86,7 @@ class CleanupServiceTest {
         Fixture latched = new Fixture(settings(false), 20.0, true);
         try {
             latched.latch.trip("planned");
-            assertEquals(CleanupResult.LATCHED, latched.service.process("world", latched.candidate()));
+            assertEquals(CleanupResult.LATCHED, latched.service.process("world", latched.candidate(true)));
         } finally {
             latched.close();
         }
@@ -125,8 +138,12 @@ class CleanupServiceTest {
             service = new CleanupService(settings, tracking, journal, latch, environment, storage, clock);
         }
 
-        private CleanupCandidate candidate() {
-            return new CleanupCandidate(new ChunkKey(WORLD_UUID.toString(), 10, 11), NOW.minusSeconds(3600));
+        private CleanupCandidate candidate(boolean reserved) {
+            Instant generated = NOW.minusSeconds(3600);
+            ChunkKey key = new ChunkKey(WORLD_UUID.toString(), 10, 11);
+            return reserved
+                    ? new CleanupCandidate(key, generated, NOW.minusSeconds(1))
+                    : new CleanupCandidate(key, generated);
         }
 
         @Override

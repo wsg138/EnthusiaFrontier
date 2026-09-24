@@ -13,6 +13,15 @@ public interface FrontierRepository {
 
     List<CleanupCandidate> findCleanupCandidates(String worldUuid, Instant cutoff, int limit) throws Exception;
 
+    /**
+     * Atomically recovers existing destructive intents and reserves additional eligible candidates.
+     * Returned candidates must carry a durable reclaim intent before leaving the repository.
+     */
+    default List<CleanupCandidate> reserveCleanupCandidates(
+            String worldUuid, Instant cutoff, int limit, Instant reservedAt) throws Exception {
+        throw new UnsupportedOperationException("durable cleanup reservation is not implemented");
+    }
+
     List<RegionKey> findDeletedRegions(String worldUuid, int limit) throws Exception;
 
     boolean isProtected(ChunkKey key) throws Exception;

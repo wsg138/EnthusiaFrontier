@@ -122,10 +122,14 @@ public final class BukkitCleanupCoordinator implements AutoCloseable {
         List<CandidateWork> discoveredCandidates = new ArrayList<>();
         List<RegionWork> discoveredRegions = new ArrayList<>();
         try {
-            Instant cutoff = Instant.now().minus(Duration.ofDays(settings.untouchedRetentionDays()));
+            Instant observedAt = Instant.now();
+            Instant cutoff = observedAt.minus(Duration.ofDays(settings.untouchedRetentionDays()));
             for (Map.Entry<String, String> world : worlds.entrySet()) {
-                for (CleanupCandidate candidate : repository.findCleanupCandidates(
-                        world.getValue(), cutoff, settings.candidateBatchSize())) {
+                List<CleanupCandidate> found = settings.dryRun()
+                        ? repository.findCleanupCandidates(world.getValue(), cutoff, settings.candidateBatchSize())
+                        : repository.reserveCleanupCandidates(
+                                world.getValue(), cutoff, settings.candidateBatchSize(), observedAt);
+                for (CleanupCandidate candidate : found) {
                     discoveredCandidates.add(new CandidateWork(world.getKey(), candidate));
                 }
                 if (settings.physicalReclaim() && !settings.dryRun()) {
