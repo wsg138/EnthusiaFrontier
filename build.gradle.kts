@@ -59,13 +59,6 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
 }
 
-tasks.processResources {
-    inputs.property("releaseVersion", releaseVersionValue)
-    filesMatching("plugin.yml") {
-        expand(mapOf("releaseVersion" to releaseVersionValue))
-    }
-}
-
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     systemProperty("frontier.expectedVersion", releaseVersionValue)
