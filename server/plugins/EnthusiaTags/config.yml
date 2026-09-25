@@ -1,0 +1,319 @@
+config-version: 5
+
+# MiniMessage format exposed to nametag consumers. `{tag}` is replaced with configured tag text.
+line-format: "<gray>[{tag}<gray>]"
+
+# Main /tags GUI title.
+gui-title: "Your Tags"
+
+# Menu labels. Legacy values remain supported for compatibility.
+clear-item-name: "&cClear Tag"
+no-tags-item-name: "&7No tags yet"
+
+# Operational settings.
+performance:
+  # How often vanished / visibility state is rechecked.
+  tag-visibility-refresh-ticks: 100
+
+  # How often trail cosmetics tick.
+  cosmetics-trail-ticks: 10
+
+  # How often reward progress caches are flushed to disk.
+  reward-save-interval-ticks: 200
+
+  # Reward GUI progress cache time-to-live.
+  reward-progress-cache-ticks: 100
+
+  # Cosmetic/projectile caps. Defaults preserve normal behavior while preventing runaway load.
+  max-tracked-projectiles: 300
+  max-projectile-particles-per-tick: 600
+  projectile-trail-max-age-ticks: 200
+
+vanish:
+  metadata-keys:
+    - "vanished"
+    - "vanish"
+  treat-invisibility-effect-as-vanish: true
+
+global-scan:
+  enabled: true
+  interval-minutes: 10
+  max-players-per-tick: 1
+  repair-mode: true
+  report-only: false
+  debug-log-repairs: false
+
+rewards:
+  lore-items:
+    # Automatic handoff attempts stop here and move to REVIEW; staff loreretry can try again.
+    max-auto-attempts: 48
+
+  anti-farm:
+    kills:
+      # Each killer/victim pair may receive five credits in a true rolling hour.
+      enabled: true
+      rolling-window-minutes: 60
+      rolling-window-max-kills: 5
+
+  unlock-notifications:
+    individual-limit: 3
+  unlock-sound:
+    enabled: true
+    sound: "BLOCK_AMETHYST_BLOCK_CHIME"
+    volume: 0.35
+    pitch: 1.15
+
+debug:
+  performance:
+    enabled: false
+    log-interval-seconds: 300
+
+daily:
+  timezone: "America/Indiana/Indianapolis"
+  currency-label: "Raw Gold"
+  payouts: [5, 10, 15, 20, 30, 40, 50]
+
+  # One successful or uncertain daily transaction per IP and date.
+  # Use /enthusiatags daily sibling add <player1> <player2> for shared households.
+  ip-limit:
+    enabled: true
+
+  # Plays when /daily is opened. This is a global server option, not a player GUI toggle.
+  animation:
+    enabled: true
+    frames: 20
+    frame-ticks: 2
+    sound:
+      enabled: true
+      step-sound: "BLOCK_NOTE_BLOCK_HAT"
+      accent-sound: "BLOCK_NOTE_BLOCK_CHIME"
+      volume: 0.35
+      starting-pitch: 0.72
+      pitch-step: 0.055
+      final-sound: "BLOCK_AMETHYST_BLOCK_CHIME"
+      final-volume: 0.65
+      final-pitch: 1.2
+
+  # Short confirmation sound after a successful claim.
+  claim-sound:
+    enabled: true
+    sound: "ENTITY_EXPERIENCE_ORB_PICKUP"
+    volume: 0.7
+    pitch: 1.25
+
+tags:
+  # FRONTIER-FIRST-TAGS-BEGIN
+  frontier_first_diamonds: { display-name: "<bold><#5FD3FF>Diamond Pioneer", tag-text: "<bold><#5FD3FF>Diamond Pioneer", icon: "DIAMOND", description: ["&7First to obtain Diamonds on Frontier Test."] }
+  frontier_first_nether: { display-name: "<bold><#FF6B6B>Nether Pioneer", tag-text: "<bold><#FF6B6B>Nether Pioneer", icon: "NETHERRACK", description: ["&7First to enter the Nether on Frontier Test."] }
+  frontier_first_fortress: { display-name: "<bold><#B54832>Fortress Founder", tag-text: "<bold><#B54832>Fortress Founder", icon: "NETHER_BRICKS", description: ["&7First Nether Fortress discovery on Frontier Test."] }
+  frontier_first_ancient_debris: { display-name: "<bold><#8A5A44>Ancient Miner", tag-text: "<bold><#8A5A44>Ancient Miner", icon: "ANCIENT_DEBRIS", description: ["&7First Ancient Debris on Frontier Test."] }
+  frontier_first_netherite_ingot: { display-name: "<bold><#8B8B95>Netherite Pioneer", tag-text: "<bold><#8B8B95>Netherite Pioneer", icon: "NETHERITE_INGOT", description: ["&7First Netherite Ingot on Frontier Test."] }
+  frontier_first_netherite_armor: { display-name: "<bold><#6F6F7A>Netherite Vanguard", tag-text: "<bold><#6F6F7A>Netherite Vanguard", icon: "NETHERITE_CHESTPLATE", description: ["&7First full Netherite armor set on Frontier Test."] }
+  frontier_first_stronghold: { display-name: "<bold><#C690FF>Stronghold Scout", tag-text: "<bold><#C690FF>Stronghold Scout", icon: "ENDER_EYE", description: ["&7First Stronghold discovery on Frontier Test."] }
+  frontier_first_mace: { display-name: "<bold><#D0D0D0>Heavy Hitter", tag-text: "<bold><#D0D0D0>Heavy Hitter", icon: "MACE", description: ["&7First legitimate Mace on Frontier Test."] }
+  frontier_first_end: { display-name: "<bold><#8B7CFF>End Pioneer", tag-text: "<bold><#8B7CFF>End Pioneer", icon: "END_STONE", description: ["&7First to enter The End on Frontier Test."] }
+  frontier_first_dragon: { display-name: "<bold><#E04BFF>Dragonbreaker", tag-text: "<bold><#E04BFF>Dragonbreaker", icon: "DRAGON_HEAD", description: ["&7First credited Ender Dragon final blow on Frontier Test."] }
+  frontier_first_elytra: { display-name: "<bold><#7EE7FF>First Flight", tag-text: "<bold><#7EE7FF>First Flight", icon: "ELYTRA", description: ["&cLOCKED: Elytras are unobtainable on Frontier Test."] }
+  frontier_first_wither: { display-name: "<bold><#8B8B8B>Witherbreaker", tag-text: "<bold><#8B8B8B>Witherbreaker", icon: "WITHER_SKELETON_SKULL", description: ["&7First credited Wither final blow on Frontier Test."] }
+  frontier_first_beacon: { display-name: "<bold><#F7F29A>Beacon Pioneer", tag-text: "<bold><#F7F29A>Beacon Pioneer", icon: "BEACON", description: ["&7First Beacon activation on Frontier Test."] }
+  frontier_first_iron: { display-name: "<bold><#D9D9D9>Iron Pioneer", tag-text: "<bold><#D9D9D9>Iron Pioneer", icon: "IRON_INGOT", description: ["&7First Iron Ingot on Frontier Test."] }
+  frontier_first_obsidian: { display-name: "<bold><#664A8A>Obsidian Pioneer", tag-text: "<bold><#664A8A>Obsidian Pioneer", icon: "OBSIDIAN", description: ["&7First Obsidian on Frontier Test."] }
+  frontier_first_blaze_rod: { display-name: "<bold><#FFB347>Blaze Pioneer", tag-text: "<bold><#FFB347>Blaze Pioneer", icon: "BLAZE_ROD", description: ["&7First Blaze Rod on Frontier Test."] }
+  frontier_first_heavy_core: { display-name: "<bold><#4FC3F7>Heavy Core Pioneer", tag-text: "<bold><#4FC3F7>Heavy Core Pioneer", icon: "HEAVY_CORE", description: ["&7First Heavy Core on Frontier Test."] }
+  frontier_first_dragon_egg: { display-name: "<bold><#B36CFF>Egg Holder", tag-text: "<bold><#B36CFF>Egg Holder", icon: "DRAGON_EGG", description: ["&7First Dragon Egg on Frontier Test."] }
+  frontier_first_totem: { display-name: "<bold><#FFD166>Undying Pioneer", tag-text: "<bold><#FFD166>Undying Pioneer", icon: "TOTEM_OF_UNDYING", description: ["&7First Totem of Undying on Frontier Test."] }
+  frontier_first_god_apple: { display-name: "<bold><#FFD700>Golden Legend", tag-text: "<bold><#FFD700>Golden Legend", icon: "ENCHANTED_GOLDEN_APPLE", description: ["&7First Enchanted Golden Apple on Frontier Test."] }
+  frontier_first_full_beacon: { display-name: "<bold><#FFF3A3>Beaconator", tag-text: "<bold><#FFF3A3>Beaconator", icon: "BEACON", description: ["&7First fully powered Beacon on Frontier Test."] }
+  # FRONTIER-FIRST-TAGS-END
+  beta_tester:
+    display-name: "<#39c5ff>Beta <#6ee7ff>Tester"
+    tag-text: "<#39c5ff>Beta <#6ee7ff>Tester"
+    icon: "DIAMOND"
+    description:
+      - "&7Early supporter"
+  example_placeholder:
+    display-name: "<green>Example Placeholder"
+    tag-text: "<yellow>{player}"
+    icon: "NAME_TAG"
+    description:
+      - "&7Shows how to use placeholders"
+  block_game_addict:
+    display-name: "<#4fc3ff><bold>Block <#8be3ff>Game <#b6f2ff>Addict"
+    tag-text: "<#4fc3ff><bold>Block <#8be3ff>Game <#b6f2ff>Addict"
+    icon: "CLOCK"
+  no_life:
+    display-name: "<#d16bff><bold>No <#ff7adf>Life"
+    tag-text: "<#d16bff><bold>No <#ff7adf>Life"
+    icon: "CLOCK"
+  grass_never:
+    display-name: "<#4caf50><underlined>Grass? Never Heard of It"
+    tag-text: "<#4caf50><underlined>Grass? Never Heard of It"
+    icon: "CLOCK"
+  touch_grass_failed:
+    display-name: "<#6bff7a><bold>Touch Grass <white>(Failed)"
+    tag-text: "<#6bff7a><bold>Touch Grass <white>(Failed)"
+    icon: "CLOCK"
+  my_life_now:
+    display-name: "<#ff7adf><bold>This Is My Life Now"
+    tag-text: "<#ff7adf><bold>This Is My Life Now"
+    icon: "CLOCK"
+  server_home:
+    display-name: "<#ffcc66><bold>This Server Is My Home"
+    tag-text: "<#ffcc66><bold>This Server Is My Home"
+    icon: "CLOCK"
+  sleeps_in_minecraft:
+    display-name: "<#6ee7ff><bold>Sleeps in Minecraft"
+    tag-text: "<#6ee7ff><bold>Sleeps in Minecraft"
+    icon: "CLOCK"
+  tree_puncher:
+    display-name: "<#7bdc5f><bold>Professional Tree Puncher"
+    tag-text: "<#7bdc5f><bold>Tree Puncher"
+    icon: "OAK_LOG"
+  industrial_lumberjack:
+    display-name: "<#4caf50><bold>Industrial Lumberjack"
+    tag-text: "<#4caf50><bold>Lumberjack"
+    icon: "OAK_LOG"
+  dirt_collector:
+    display-name: "<#d2a679><bold>Certified Dirt Collector"
+    tag-text: "<#d2a679><bold>Dirt Collector"
+    icon: "DIRT"
+  stone_age:
+    display-name: "<#b0b0b0><bold>Stone Age Never Ended"
+    tag-text: "<#b0b0b0><bold>Stone Age"
+    icon: "STONE"
+  iron_deficiency:
+    display-name: "<white><bold>Iron Deficiency"
+    tag-text: "<white><bold>Iron Deficiency"
+    icon: "IRON_ORE"
+  diamond_hands:
+    display-name: "<#5fd3ff><bold>Diamond Hands"
+    tag-text: "<#5fd3ff><bold>Diamond Hands"
+    icon: "DIAMOND"
+  nether_enjoyer:
+    display-name: "<#ff6b6b><bold>Nether Enjoyer"
+    tag-text: "<#ff6b6b><bold>Nether Enjoyer"
+    icon: "NETHERRACK"
+  yearn_for_mines:
+    display-name: "<#6b6b6b><bold>I Yearn for the Mines"
+    tag-text: "<#6b6b6b><bold>Yearn for the Mines"
+    icon: "DEEPSLATE"
+  no_mercy:
+    display-name: "<#ff4444><bold>No Mercy"
+    tag-text: "<#ff4444><bold>No Mercy"
+    icon: "IRON_SWORD"
+  silent_killer:
+    display-name: "<#b00020><bold>Silent Killer"
+    tag-text: "<#b00020><bold>Silent Killer"
+    icon: "IRON_SWORD"
+  already_dead:
+    display-name: "<#8b0000><bold>Already Dead"
+    tag-text: "<#8b0000><bold>Already Dead"
+    icon: "NETHERITE_SWORD"
+  death_sentence:
+    display-name: "<#ff9f43><bold>Death Sentence"
+    tag-text: "<#ff9f43><bold>Death Sentence"
+    icon: "GOLDEN_SWORD"
+  checkmate:
+    display-name: "<#6ee7ff><bold>Checkmate"
+    tag-text: "<#6ee7ff><bold>Checkmate"
+    icon: "DIAMOND_CHESTPLATE"
+  not_even_close:
+    display-name: "<#ff5252><bold>Not Even Close"
+    tag-text: "<#ff5252><bold>Not Even Close"
+    icon: "RED_DYE"
+  fear_me:
+    display-name: "<#c0c0c0><bold>Fear Me (Please)"
+    tag-text: "<#c0c0c0><bold>Fear Me"
+    icon: "SKELETON_SKULL"
+  fallen:
+    display-name: "<#9e9e9e><bold>Fallen"
+    tag-text: "<#9e9e9e><bold>Fallen"
+    icon: "SKELETON_SKULL"
+  very_experienced:
+    display-name: "<#9e9e9e><bold>Very Experienced"
+    tag-text: "<#9e9e9e><bold>Very Experienced"
+    icon: "SKELETON_SKULL"
+  respawn_enjoyer:
+    display-name: "<#9e9e9e><bold>Respawn Enjoyer"
+    tag-text: "<#9e9e9e><bold>Respawn Enjoyer"
+    icon: "SKELETON_SKULL"
+  unkillable_spirit:
+    display-name: "<#d0d0d0><bold>Unkillable Spirit"
+    tag-text: "<#d0d0d0><bold>Unkillable Spirit"
+    icon: "SKELETON_SKULL"
+  refuses_to_quit:
+    display-name: "<#b0b0b0><bold>Refuses to Quit"
+    tag-text: "<#b0b0b0><bold>Refuses to Quit"
+    icon: "SKELETON_SKULL"
+  target_practice:
+    display-name: "<#ffd166><bold>Target Practice"
+    tag-text: "<#ffd166><bold>Target Practice"
+    icon: "BOW"
+  personal_problem:
+    display-name: "<#ffb347><bold>Personal Problem"
+    tag-text: "<#ffb347><bold>Personal Problem"
+    icon: "BOW"
+  rent_free:
+    display-name: "<#ff9f1a><bold>Rent Free"
+    tag-text: "<#ff9f1a><bold>Rent Free"
+    icon: "BOW"
+  nemesis:
+    display-name: "<#ff4d4d><bold>Nemesis"
+    tag-text: "<#ff4d4d><bold>Nemesis"
+    icon: "BOW"
+  blooded:
+    display-name: "<#ff4d4d><bold>Blooded"
+    tag-text: "<#ff4d4d><bold>Blooded"
+    icon: "IRON_SWORD"
+  seasoned:
+    display-name: "<#ff3b30><bold>Seasoned"
+    tag-text: "<#ff3b30><bold>Seasoned"
+    icon: "IRON_SWORD"
+  battle_hardened:
+    display-name: "<#ff2d55><bold>Battle-Hardened"
+    tag-text: "<#ff2d55><bold>Battle-Hardened"
+    icon: "IRON_SWORD"
+  warpath:
+    display-name: "<#ff0000><bold>Warpath"
+    tag-text: "<#ff0000><bold>Warpath"
+    icon: "NETHERITE_SWORD"
+  unstoppable:
+    display-name: "<#ff0000><bold>Unstoppable"
+    tag-text: "<#ff0000><bold>Unstoppable"
+    icon: "NETHERITE_SWORD"
+  gravity_victim:
+    display-name: "<#a0a0a0><bold>Gravity's Victim"
+    tag-text: "<#a0a0a0><bold>Gravity's Victim"
+    icon: "FEATHER"
+  skill_issue:
+    display-name: "<#b0b0b0><bold>Skill Issue"
+    tag-text: "<#b0b0b0><bold>Skill Issue"
+    icon: "FEATHER"
+  physics_hard:
+    display-name: "<#8d8d8d><bold>Physics Is Hard"
+    tag-text: "<#8d8d8d><bold>Physics Is Hard"
+    icon: "FEATHER"
+  lava_allergy:
+    display-name: "<#ff8c00><bold>Lava Allergy"
+    tag-text: "<#ff8c00><bold>Lava Allergy"
+    icon: "LAVA_BUCKET"
+  i_swear_it_worked:
+    display-name: "<#c0c0c0><bold>I Swear It Worked"
+    tag-text: "<#c0c0c0><bold>I Swear It Worked"
+    icon: "TNT"
+  died_to_chicken:
+    display-name: "<#ffe066><bold>Died to a Chicken"
+    tag-text: "<#ffe066><bold>Died to a Chicken"
+    icon: "CHICKEN"
+  lag_was_crazy:
+    display-name: "<#b0b0b0><underlined>Lag Was Crazy"
+    tag-text: "<#b0b0b0><underlined>Lag Was Crazy"
+    icon: "ENDER_PEARL"
+  baltop_elite:
+    display-name: "<#ffd700><bold>Baltop Elite"
+    tag-text: "<#ffd700><bold>Baltop Elite"
+    icon: "GOLD_INGOT"
+  high_roller:
+    display-name: "<#ffb700><bold>High Roller"
+    tag-text: "<#ffb700><bold>High Roller"
+    icon: "GOLD_BLOCK"

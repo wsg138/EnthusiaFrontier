@@ -21,3 +21,21 @@ challenge_worker_owns:
   - EnthusiaAdvancements final jar/tree config
   - UltimateAdvancementAPI jar
   - any finalized EnthusiaTags first-reward definitions
+
+# FRONTIER-CHALLENGE-ARTIFACTS-BEGIN
+challenge_runtime:
+  source_commit: f410617c589f2a462cced743f9cd8629834d471f
+  java: 21
+  paper_api: 1.21.11-R0.1-SNAPSHOT
+  sqlite_jdbc: 3.53.4.0
+  luckperms_api: '5.4'
+  floodgate_api: 2.2.5-SNAPSHOT
+  badgers_advancements_source: 42e901473234f5b69c07d5416565d80addbb197d
+  ultimate_advancement_api: 2.8.1
+  enthusia_tags_source: 261efb9144216ae86a4a2c8ed406a7f44dcae851
+  artifacts:
+    EnthusiaTempChallenges-0.2.0-frontier.1.jar: 765d847c2102136f74c0d2875ac78b39d51926e81b596e1a33d2661a7b9597dd
+    EnthusiaAdvancements-1.0.0-frontier.jar: 5e9adcf78a6360985072f9df2758ea275be4178ecfd219b928cb26ea266e2d21
+    UltimateAdvancementAPI-2.8.1.jar: c6dfff5238eb119207c7a1e98c3246c5751da0c44504789c055a73e662d0b55b
+    EnthusiaTags.jar: 9c4729d004cd7a5fa9fa7e2aba226cc26e561d22e54466660c44d2cbd4e510b4
+# FRONTIER-CHALLENGE-ARTIFACTS-END

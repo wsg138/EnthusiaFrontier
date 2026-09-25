@@ -1,0 +1,187 @@
+event:
+  id: frontier_2026_test
+  state: ACTIVE
+
+database:
+  file: challenge-ledger.sqlite
+
+eligibility:
+  exclude-operators: true
+  allow-adventure: false
+  excluded-permission: enthusia.tempchallenges.excluded
+  admin-mutation-guard-seconds: 10
+
+presentation:
+  advancement-tree: frontier_firsts
+
+challenges:
+  first_diamonds:
+    title: Diamond Pioneer
+    announcement: obtain Diamonds
+    permission: enthusia.frontier.first.diamonds
+    tag: frontier_first_diamonds
+    advancement-node: first_diamonds
+    xp: 250
+    signals: ['ITEM_ACQUIRED:DIAMOND']
+  first_nether:
+    title: Nether Pioneer
+    announcement: enter the Nether
+    permission: enthusia.frontier.first.nether
+    tag: frontier_first_nether
+    advancement-node: first_nether
+    xp: 250
+    signals: ['WORLD_ENTRY:NETHER']
+  first_fortress:
+    title: Fortress Founder
+    announcement: discover a Nether Fortress
+    permission: enthusia.frontier.first.fortress
+    tag: frontier_first_fortress
+    advancement-node: first_fortress
+    xp: 350
+    signals: ['VANILLA_ADVANCEMENT:minecraft:nether/find_fortress']
+  first_ancient_debris:
+    title: Ancient Miner
+    announcement: obtain Ancient Debris
+    permission: enthusia.frontier.first.ancient_debris
+    tag: frontier_first_ancient_debris
+    advancement-node: first_ancient_debris
+    xp: 400
+    signals: ['ITEM_ACQUIRED:ANCIENT_DEBRIS', 'VANILLA_ADVANCEMENT:minecraft:nether/obtain_ancient_debris']
+  first_netherite_armor:
+    title: Netherite Vanguard
+    announcement: complete a full set of Netherite armor
+    permission: enthusia.frontier.first.netherite_armor
+    tag: frontier_first_netherite_armor
+    advancement-node: first_netherite_armor
+    xp: 750
+    signals: ['ARMOR_COMPLETE:NETHERITE', 'VANILLA_ADVANCEMENT:minecraft:nether/netherite_armor']
+  first_stronghold:
+    title: Stronghold Scout
+    announcement: discover a Stronghold
+    permission: enthusia.frontier.first.stronghold
+    tag: frontier_first_stronghold
+    advancement-node: first_stronghold
+    xp: 400
+    signals: ['VANILLA_ADVANCEMENT:minecraft:story/follow_ender_eye']
+  first_mace:
+    title: Heavy Hitter
+    announcement: obtain a Mace
+    permission: enthusia.frontier.first.mace
+    tag: frontier_first_mace
+    advancement-node: first_mace
+    xp: 600
+    signals: ['ITEM_ACQUIRED:MACE']
+  first_end:
+    title: End Pioneer
+    announcement: enter The End
+    permission: enthusia.frontier.first.end
+    tag: frontier_first_end
+    advancement-node: first_end
+    xp: 500
+    signals: ['WORLD_ENTRY:THE_END']
+  first_dragon:
+    title: Dragonbreaker
+    announcement: land the final blow on the Ender Dragon
+    permission: enthusia.frontier.first.dragon
+    tag: frontier_first_dragon
+    advancement-node: first_dragon
+    xp: 1000
+    signals: ['ENTITY_FINAL_KILL:ENDER_DRAGON']
+  first_elytra:
+    title: First Flight
+    announcement: obtain an Elytra
+    permission: enthusia.frontier.first.elytra
+    tag: frontier_first_elytra
+    advancement-node: first_elytra
+    xp: 1000
+    locked: true
+    lock-reason: Elytras are intentionally unobtainable on Enthusia Frontier Test.
+    signals: ['ITEM_ACQUIRED:ELYTRA']
+  first_wither:
+    title: Witherbreaker
+    announcement: land the final blow on the Wither
+    permission: enthusia.frontier.first.wither
+    tag: frontier_first_wither
+    advancement-node: first_wither
+    xp: 900
+    signals: ['ENTITY_FINAL_KILL:WITHER']
+  first_beacon:
+    title: Beacon Pioneer
+    announcement: activate a Beacon
+    permission: enthusia.frontier.first.beacon
+    tag: frontier_first_beacon
+    advancement-node: first_beacon
+    xp: 600
+    signals: ['VANILLA_ADVANCEMENT:minecraft:nether/create_beacon']
+  first_iron:
+    title: Iron Pioneer
+    announcement: obtain an Iron Ingot
+    permission: enthusia.frontier.first.iron
+    tag: frontier_first_iron
+    advancement-node: first_iron
+    xp: 100
+    signals: ['ITEM_ACQUIRED:IRON_INGOT']
+  first_obsidian:
+    title: Obsidian Pioneer
+    announcement: obtain Obsidian
+    permission: enthusia.frontier.first.obsidian
+    tag: frontier_first_obsidian
+    advancement-node: first_obsidian
+    xp: 150
+    signals: ['ITEM_ACQUIRED:OBSIDIAN']
+  first_blaze_rod:
+    title: Blaze Pioneer
+    announcement: obtain a Blaze Rod
+    permission: enthusia.frontier.first.blaze_rod
+    tag: frontier_first_blaze_rod
+    advancement-node: first_blaze_rod
+    xp: 250
+    signals: ['ITEM_ACQUIRED:BLAZE_ROD']
+  first_netherite_ingot:
+    title: Netherite Pioneer
+    announcement: obtain a Netherite Ingot
+    permission: enthusia.frontier.first.netherite_ingot
+    tag: frontier_first_netherite_ingot
+    advancement-node: first_netherite_ingot
+    xp: 450
+    signals: ['ITEM_ACQUIRED:NETHERITE_INGOT']
+  first_heavy_core:
+    title: Heavy Core Pioneer
+    announcement: obtain a Heavy Core
+    permission: enthusia.frontier.first.heavy_core
+    tag: frontier_first_heavy_core
+    advancement-node: first_heavy_core
+    xp: 500
+    signals: ['ITEM_ACQUIRED:HEAVY_CORE']
+  first_dragon_egg:
+    title: Egg Holder
+    announcement: obtain the Dragon Egg
+    permission: enthusia.frontier.first.dragon_egg
+    tag: frontier_first_dragon_egg
+    advancement-node: first_dragon_egg
+    xp: 750
+    signals: ['ITEM_ACQUIRED:DRAGON_EGG']
+  first_totem:
+    title: Undying Pioneer
+    announcement: obtain a Totem of Undying
+    permission: enthusia.frontier.first.totem
+    tag: frontier_first_totem
+    advancement-node: first_totem
+    xp: 400
+    signals: ['ITEM_ACQUIRED:TOTEM_OF_UNDYING']
+  first_enchanted_golden_apple:
+    title: Golden Legend
+    announcement: obtain an Enchanted Golden Apple
+    permission: enthusia.frontier.first.god_apple
+    tag: frontier_first_god_apple
+    advancement-node: first_enchanted_golden_apple
+    xp: 500
+    signals: ['ITEM_ACQUIRED:ENCHANTED_GOLDEN_APPLE']
+  first_full_beacon:
+    title: Beaconator
+    announcement: fully power a Beacon
+    permission: enthusia.frontier.first.full_beacon
+    tag: frontier_first_full_beacon
+    advancement-node: first_full_beacon
+    xp: 1000
+    signals: ['VANILLA_ADVANCEMENT:minecraft:nether/create_full_beacon']
