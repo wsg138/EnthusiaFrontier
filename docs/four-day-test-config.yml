@@ -1,20 +1,20 @@
 # EnthusiaFrontier four-day server test profile.
 # Copy this file to plugins/EnthusiaFrontier/config.yml on the disposable test server.
 #
-# Keep 100000 when testing against an Enthusia world/copy so the pregenerated core
-# remains permanently outside Frontier cleanup. Set core-radius-blocks to 0 ONLY
-# when the entire test world is disposable and every newly generated chunk should
-# be managed by Frontier.
+# The temporary destructive test server uses a 5,000-block world border. Because
+# that entire world is disposable, core-radius-blocks is 0 so every newly generated
+# overworld chunk inside the test border is managed by Frontier. Production keeps
+# the normal 100000-block permanent overworld core.
 worlds:
   world:
     enabled: true
-    core-radius-blocks: 100000
+    core-radius-blocks: 0
   world_nether:
     enabled: false
-    core-radius-blocks: 100000
+    core-radius-blocks: 0
   world_the_end:
     enabled: false
-    core-radius-blocks: 100000
+    core-radius-blocks: 0
 
 tracking:
   protection-radius-chunks: 2
