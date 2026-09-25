@@ -1,0 +1,86 @@
+# VeloTAB owns the network player list. Backend TAB only owns this server's scoreboard.
+header-footer:
+  enabled: false
+tablist-name-formatting:
+  enabled: false
+scoreboard-teams:
+  enabled: false
+playerlist-objective:
+  enabled: false
+belowname-objective:
+  enabled: false
+prevent-spectator-effect:
+  enabled: false
+bossbar:
+  enabled: false
+scoreboard:
+  enabled: true
+  toggle-command: /scoreboard
+  remember-toggle-choice: true
+  hidden-by-default: false
+  use-numbers: false
+  static-number: 0
+  delay-on-join-milliseconds: 500
+  scoreboards:
+    frontier_bedrock:
+      display-condition: '%floodgate%=yes'
+      title: '&6&lEnthusia Frontier'
+      lines:
+      - '&8--------------------'
+      - '&f%player%'
+      - '&7Rank: &f%luckperms_prefix%'
+      - '&7Playtime: &b%playtime_active_formatted%'
+      - '&7World: &f%world%'
+      - '&7Ping: &a%ping%ms'
+      - ''
+      - '&65k &7Overworld &8• &62.5k &7Nether'
+      - '&7Main End island only'
+      - '&8--------------------'
+    frontier_java:
+      display-condition: '%floodgate%=no'
+      title: '<black><shadow:black>%nexo_enthusia_logo%</shadow></black> <gold><bold>FRONTIER</bold></gold>'
+      lines:
+      - '<dark_gray>--------------------'
+      - '<white>%player%'
+      - '<gray>Rank: <white>%luckperms_prefix%'
+      - '<gray>Playtime: <aqua>%playtime_active_formatted%'
+      - '<gray>World: <white>%world%'
+      - '<gray>Ping: <green>%ping%ms'
+      - ''
+      - '<gold>5k <gray>Overworld <dark_gray>• <gold>2.5k <gray>Nether'
+      - '<gray>Main End island only'
+      - '<dark_gray>--------------------'
+layout:
+  enabled: false
+ping-spoof:
+  enabled: false
+placeholders:
+  date-format: 'MM/dd/yyyy'
+  time-format: '[HH:mm:ss / h:mm a]'
+  time-offset: 0
+  register-tab-expansion: false
+placeholder-refresh-intervals:
+  default-refresh-interval: 1000
+  '%ping%': 1000
+  '%world%': 1000
+  '%luckperms_prefix%': 1000
+  '%playtime_active_formatted%': 5000
+  '%nexo_enthusia_logo%': 5000
+assign-groups-by-permissions: false
+primary-group-finding-list:
+- Owner
+- Admin
+- Moderator
+- Helper
+- default
+permission-refresh-interval: 1000
+debug: false
+use-online-uuid-in-tablist: true
+mysql:
+  enabled: false
+proxy-support:
+  enabled: false
+components:
+  minimessage-support: true
+  disable-shadow-for-heads: true
+config-version: 5

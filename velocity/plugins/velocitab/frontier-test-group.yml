@@ -1,0 +1,32 @@
+# Merge this group under the existing top-level `groups:` list in plugins/velocitab/tab_groups.yml.
+- name: FRONTIER_TEST
+  headers:
+  - |2-
+
+    <gold><strikethrough>                                                       </strikethrough></gold>
+    <gold><bold>ENTHUSIA FRONTIER TEST</bold></gold>
+    <green>●</green> <white>ᴏɴʟɪɴᴇ ᴘʟᴀʏᴇʀѕ</white><dark_gray>:</dark_gray> <gold>%players_online%</gold>
+  footers:
+  - |2-
+
+    <white>ᴘɪɴɢ</white><dark_gray>:</dark_gray> <gold>%ping%</gold>
+    <gray>5,000 Overworld • 2,500 Nether • Main End Island</gray>
+    <white>ᴅɪѕᴄᴏʀᴅ</white><dark_gray>:</dark_gray> <gold>discord.enthusia.info</gold>
+
+    <gold><strikethrough>                                                                </strikethrough></gold>
+  format: '%prefix%%username%'
+  nametag:
+    prefix: ''
+    suffix: ''
+  servers:
+  - FRONTIER_TEST
+  sorting_placeholders:
+  - '%role_weight%'
+  - '%username_lower%'
+  placeholder_replacements: {}
+  collisions: false
+  header_footer_update_rate: 1000
+  format_update_rate: 1000
+  nametag_update_rate: 1000
+  placeholder_update_rate: 1000
+  only_list_players_in_same_server: true

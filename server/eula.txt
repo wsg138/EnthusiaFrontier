@@ -1,0 +1,3 @@
+# Enthusia Frontier Test
+# By keeping eula=true you indicate agreement with the Minecraft EULA.
+eula=true

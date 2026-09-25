@@ -1,0 +1,63 @@
+# Enthusia Frontier Test - Leaf 1.21.11 configuration.
+# Intentionally concise: settings not listed here use Leaf defaults.
+config-version: '3.0'
+async:
+  async-chunk-send:
+    enabled: true
+  async-mob-spawning:
+    enabled: true
+  async-pathfinding:
+    enabled: true
+    max-threads: 0
+    keepalive: 60
+    queue-size: 0
+    reject-policy: CALLER_RUNS
+  async-playerdata-save:
+    enabled: false
+  async-entity-tracker:
+    enabled: true
+    threads: 0
+performance:
+  fast-biome-manager-seed-obfuscation:
+    enabled: true
+    seed-obfuscation-key: 1698786044006958112
+  faster-random-generator:
+    enabled: true
+    enable-for-worldgen: true
+    warn-for-slime-chunk: true
+    use-legacy-random-for-slime-chunk: true
+  cache-biome:
+    enabled: true
+    mob-spawning: true
+    advancements: true
+  optimize-block-entities: true
+  only-tick-items-in-hand: true
+network:
+  async-switch-state: false
+  chat-message-signature: false
+misc:
+  including-5s-in-get-tps: true
+  region-format:
+    format-name: MCA
+    compress-level: 6
+    io-thread-count: 6
+    io-flush-delay: -1
+    linear-use-virtual-thread: true
+  remove-change-non-editable-sign-warning: false
+  remove-spigot-check-bungee-config: false
+  # Required for this server: ores/structures use Leaf's secure 1024-bit seed path.
+  secure-seed:
+    enabled: true
+  sentry:
+    dsn: ''
+    log-level: WARN
+    only-log-thrown: true
+  rebrand:
+    server-mod-name: EnthusiaLeaf
+    server-gui-name: Leaf Console
+  vanilla-username-check:
+    remove-all-check: false
+    enforce-skull-validation: true
+    allow-old-players-join: false
+    use-username-regex: false
+    username-regex: ^[a-zA-Z0-9_.]*$

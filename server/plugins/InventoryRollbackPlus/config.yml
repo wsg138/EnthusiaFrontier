@@ -1,0 +1,44 @@
+enabled: true
+max-saves:
+  join: 10
+  quit: 10
+  death: 50
+  world-change: 20
+  force: 10
+backup-lines-visible: 4
+folder-location: DEFAULT
+mysql:
+  enabled: false
+  details:
+    host: localhost
+    port: 3306
+    database: enthusia_frontier_test_inventoryrollback
+    table-prefix: backup_
+    username: frontier_test
+    password: ''
+    use-SSL: false
+    verifyCertificate: false
+    allowPubKeyRetrieval: false
+  pool:
+    maximum-pool-size: 10
+    minimum-idle: 2
+    connection-timeout: 30000
+sounds:
+  teleport:
+    enabled: true
+  inventory:
+    enabled: true
+  food:
+    enabled: true
+  hunger:
+    enabled: true
+  xp:
+    enabled: true
+time-zone: America/Indiana/Indianapolis
+time-format: dd/MM/yyyy hh-mm-ss a z
+allow-other-plugins-edit-death-inventory: false
+restore-to-player-button: true
+update-checker: true
+bStats: true
+debug: false
+save-empty-inventories: true

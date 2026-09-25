@@ -1,0 +1,50 @@
+# Enthusia Frontier Test - Paper world defaults. Missing options use Paper defaults.
+_version: 31
+anticheat:
+  anti-xray:
+    enabled: true
+    engine-mode: 1
+    hidden-blocks:
+    - copper_ore
+    - deepslate_copper_ore
+    - raw_copper_block
+    - gold_ore
+    - deepslate_gold_ore
+    - iron_ore
+    - deepslate_iron_ore
+    - raw_iron_block
+    - coal_ore
+    - deepslate_coal_ore
+    - lapis_ore
+    - deepslate_lapis_ore
+    - diamond_ore
+    - deepslate_diamond_ore
+    - redstone_ore
+    - deepslate_redstone_ore
+    - emerald_ore
+    - deepslate_emerald_ore
+    lava-obscures: true
+    max-block-height: 64
+    replacement-blocks:
+    - stone
+    - deepslate
+    update-radius: 2
+    use-permission: false
+chunks:
+  delay-chunk-unloads-by: 10s
+  flush-regions-on-save: false
+  max-auto-save-chunks-per-tick: 24
+entities:
+  spawning:
+    per-player-mob-spawns: true
+environment:
+  locate-structures-outside-world-border: false
+  optimize-explosions: true
+feature-seeds:
+  generate-random-seeds-for-all: true
+hopper:
+  cooldown-when-full: true
+misc:
+  redstone-implementation: EIGENCRAFT
+unsupported-settings:
+  disable-world-ticking-when-empty: false

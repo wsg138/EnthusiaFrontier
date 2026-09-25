@@ -1,0 +1,26 @@
+# Enthusia Frontier Test - Paper global configuration.
+_version: 31
+chunk-loading-advanced:
+  auto-config-send-distance: true
+  player-max-concurrent-chunk-generates: 0
+  player-max-concurrent-chunk-loads: 0
+chunk-loading-basic:
+  player-max-chunk-generate-rate: -1.0
+  player-max-chunk-load-rate: 100.0
+  player-max-chunk-send-rate: 75.0
+misc:
+  enable-nether: true
+  fix-far-end-terrain-generation: true
+  max-joins-per-tick: 5
+proxies:
+  bungee-cord:
+    online-mode: true
+  proxy-protocol: false
+  velocity:
+    enabled: true
+    online-mode: true
+    # Deployment secret: copy the existing network Velocity forwarding secret here.
+    secret: "REPLACE_WITH_EXISTING_VELOCITY_FORWARDING_SECRET"
+spark:
+  enable-immediately: false
+  enabled: true

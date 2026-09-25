@@ -1,0 +1,48 @@
+# Destructive four-day Frontier test profile.
+worlds:
+  world:
+    enabled: true
+    core-radius-blocks: 0
+  world_nether:
+    enabled: false
+    core-radius-blocks: 0
+  world_the_end:
+    enabled: false
+    core-radius-blocks: 0
+tracking:
+  protection-radius-chunks: 2
+  mutation-queue-capacity: 65536
+  mutation-batch-size: 512
+throttle:
+  require-supported-adapter: true
+  sample-period-ticks: 20
+  recovery-hysteresis-mspt: 2.0
+  levels:
+    - name: healthy
+      enter-mspt: 0.0
+      max-generation-rate: 32.0
+      max-concurrent-generations: 4
+    - name: elevated
+      enter-mspt: 25.0
+      max-generation-rate: 16.0
+      max-concurrent-generations: 3
+    - name: pressured
+      enter-mspt: 35.0
+      max-generation-rate: 8.0
+      max-concurrent-generations: 2
+    - name: critical
+      enter-mspt: 45.0
+      max-generation-rate: 2.0
+      max-concurrent-generations: 1
+cleanup:
+  enabled: true
+  dry-run: false
+  untouched-retention-days: 1
+  scan-period-ticks: 1200
+  candidate-batch-size: 128
+  max-chunks-per-tick: 1
+  min-player-distance-chunks: 8
+  max-mspt: 35.0
+  audit-log: true
+  physical-reclaim: true
+  require-supported-adapter: true

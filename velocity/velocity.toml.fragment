@@ -1,0 +1,4 @@
+# Add inside the existing [servers] table in velocity.toml.
+FRONTIER_TEST = "REPLACE_WITH_BACKEND_HOST:25568"
+
+# Do NOT add FRONTIER_TEST to the normal try/fallback list.
