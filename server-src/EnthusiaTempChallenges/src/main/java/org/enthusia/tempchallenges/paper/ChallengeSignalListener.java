@@ -117,9 +117,15 @@ public final class ChallengeSignalListener implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void blockDrops(BlockDropItemEvent event) {
+        boolean sourceEligible = eligibleGameplayActor(event.getPlayer());
         event.getItems().forEach(entity -> {
             ItemStack item = entity.getItemStack();
-            if (markTrustedNaturalOrigin(item)) entity.setItemStack(item);
+            if (!hasItemChallenge(item.getType())) return;
+            if (sourceEligible) {
+                if (markTrustedNaturalOrigin(item)) entity.setItemStack(item);
+            } else {
+                entity.setItemStack(adminGuard.markInvalidOrigin(item));
+            }
         });
     }
 
@@ -177,13 +183,15 @@ public final class ChallengeSignalListener implements Listener {
 
     @EventHandler
     public void death(EntityDeathEvent event) {
+        Player killer = event.getEntity().getKiller();
         boolean invalidSpawn = isInvalidSpawn(event);
+        boolean invalidDropSource = invalidSpawn || (killer != null && !eligibleGameplayActor(killer));
         for (ItemStack drop : event.getDrops()) {
-            if (invalidSpawn) adminGuard.markInvalidOrigin(drop);
+            if (!hasItemChallenge(drop.getType())) continue;
+            if (invalidDropSource) adminGuard.markInvalidOrigin(drop);
             else markTrustedNaturalOrigin(drop);
         }
 
-        Player killer = event.getEntity().getKiller();
         if (event.getEntity() instanceof EnderDragon dragon) {
             Collection<DragonContribution> contributions = dragonTracker.finish(dragon.getUniqueId());
             try {
@@ -224,10 +232,7 @@ public final class ChallengeSignalListener implements Listener {
 
     private void emit(Player player, SignalKey signal, String signalId, String detail) {
         ActorIdentity actor = identities.resolve(player);
-        PlayerContext context = new PlayerContext(mode(player.getGameMode()), player.isOp(),
-                !excludedPermission.isBlank() && player.hasPermission(excludedPermission),
-                adminGuard.isGuarded(player.getUniqueId()));
-        Eligibility eligibilityResult = eligibility.evaluate(context);
+        Eligibility eligibilityResult = eligibility.evaluate(playerContext(player));
         for (ChallengeDefinition challenge : registry.route(signal)) {
             ChallengeAttempt attempt = new ChallengeAttempt(eventId, challenge, actor,
                     signalId + ':' + challenge.id(), signal, detail, Instant.now(), eligibilityResult, eventState);
@@ -236,6 +241,16 @@ public final class ChallengeSignalListener implements Listener {
                 plugin.getLogger().severe("Fail-closed persistence error for " + challenge.id() + ": " + result.message());
             }
         }
+    }
+
+    private boolean eligibleGameplayActor(Player player) {
+        return eligibility.evaluate(playerContext(player)).eligible();
+    }
+
+    private PlayerContext playerContext(Player player) {
+        return new PlayerContext(mode(player.getGameMode()), player.isOp(),
+                !excludedPermission.isBlank() && player.hasPermission(excludedPermission),
+                adminGuard.isGuarded(player.getUniqueId()));
     }
 
     private boolean markTrustedNaturalOrigin(ItemStack item) {
@@ -257,7 +272,8 @@ public final class ChallengeSignalListener implements Listener {
     }
 
     private boolean hasItemChallenge(Material material) {
-        return !registry.route(new SignalKey(SignalType.ITEM_ACQUIRED, material.name())).isEmpty();
+        return material != null && !material.isAir()
+                && !registry.route(new SignalKey(SignalType.ITEM_ACQUIRED, material.name())).isEmpty();
     }
 
     private boolean isInvalidSpawn(EntityDeathEvent event) {

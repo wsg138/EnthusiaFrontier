@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: frontier-challenge-runtime-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-test-package:
@@ -116,10 +116,12 @@ jobs:
             java: 21
             paper_api: 1.21.11-R0.1-SNAPSHOT
             sqlite_jdbc: 3.53.4.0
-            luckperms_api: '5.4'
-            floodgate_api: 2.2.5-SNAPSHOT
+            luckperms_integration: optional-reflective
+            floodgate_integration: optional-reflective
             badgers_advancements_source: 42e901473234f5b69c07d5416565d80addbb197d
             ultimate_advancement_api: 2.8.1
+            ultimate_advancement_api_source: 67d9576ae5e4ec55701ac653194bb77c5f1e708c
+            ultimate_advancement_api_nms: 1_21_R7
             enthusia_tags_source: 261efb9144216ae86a4a2c8ed406a7f44dcae851
             artifacts:
           '''
