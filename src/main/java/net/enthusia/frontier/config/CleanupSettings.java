@@ -10,6 +10,7 @@ public record CleanupSettings(
         int maxChunksPerTick,
         int minPlayerDistanceChunks,
         double maxMspt,
+        boolean auditLog,
         boolean physicalReclaim,
         boolean requireSupportedAdapter) {
 
