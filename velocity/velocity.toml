@@ -1,0 +1,144 @@
+# Enthusia Velocity reference configuration with Frontier Test added.
+# IMPORTANT: use apply-frontier-test.ps1 against the live proxy rather than blindly
+# replacing the live file; other internal backend targets may have changed since snapshot.
+config-version = "2.9"
+bind = "0.0.0.0:25564"
+motd = " <gold>                 ✦</gold><dark_red> Enthusia </dark_red><gold>SMP </gold><white>|</white><white> [</white><gold>1.21.11<white>]</white> <gold>✦</gold>"
+show-max-players = 500
+online-mode = true
+force-key-authentication = true
+prevent-client-proxy-connections = false
+player-info-forwarding-mode = "MODERN"
+# This file name is intentionally non-secret. Copy the live secret into this file locally.
+forwarding-secret-file = "forwarding.secret"
+announce-forge = false
+kick-existing-players = false
+ping-passthrough = "DISABLED"
+enable-player-address-logging = true
+enforce-chat-signing = true
+prevents-chat-reports = false
+translate-header-footer = true
+log-minimum-version = false
+minimum-version = "1.13"
+maximum-version = "UNBOUNDED"
+disable-forge = false
+kick-existing-players-check-ip = false
+log-offline-connections = true
+log-player-connections = true
+log-player-disconnections = true
+motd-hover = ["<gray>Players online: <white>{player-count}</white>/<white>{max-players}</white></gray>", "{players}"]
+
+[servers]
+SMP = "170.205.24.14:25565"
+HUB = "170.205.24.14:25567"
+FRONTIER_TEST = "REPLACE_WITH_BACKEND_HOST:25568"
+# Frontier Test is deliberately not a login/failover target.
+try = ["HUB", "SMP"]
+dynamic-fallbacks-filter = "first_available"
+server-aliases = ["joinqueue", "queue"]
+
+[forced-hosts]
+"play.enthusia.info" = ["HUB"]
+"enthusia.net" = ["HUB"]
+
+[advanced]
+compression-threshold = 256
+compression-level = -1
+login-ratelimit = 3000
+connection-timeout = 5000
+read-timeout = 25000
+haproxy-protocol = false
+tcp-fast-open = false
+bungee-plugin-message-channel = true
+show-ping-requests = false
+failover-on-unexpected-server-disconnect = true
+announce-proxy-commands = true
+log-command-executions = false
+log-player-connections = true
+accepts-transfers = false
+enable-reuse-port = false
+command-rate-limit = 200
+forward-commands-if-rate-limited = true
+kick-after-rate-limited-commands = 0
+tab-complete-rate-limit = 10
+kick-after-rate-limited-tab-completes = 0
+allow-illegal-characters-in-chat = false
+server-brand = "{backend-brand} ({proxy-brand})"
+fallback-version-ping = "{proxy-brand} {protocol-min}-{protocol-max}"
+always-fallback-ping = false
+custom-brand-proxy = "Velocity-CTD"
+custom-brand-backend = "Paper"
+login-timeout = 6000
+ignore-anonymous-player-request = false
+pool-players-across-sections = false
+
+[query]
+enabled = false
+port = 25564
+map = "Velocity"
+show-plugins = false
+
+[commands]
+server-enabled = true
+glist-enabled = true
+send-enabled = true
+alert-enabled = true
+alertraw-enabled = true
+find-enabled = true
+hub-enabled = true
+ping-enabled = true
+plist-enabled = true
+transfer-enabled = true
+override-server-command-usage = false
+
+[command-aliases]
+hub = ["lobby", "return"]
+
+[proxy-command-aliases]
+examplealias = ["velocity help"]
+
+[redis]
+enabled = false
+host = "127.0.0.1"
+port = 6379
+username = ""
+password = ""
+use-ssl = false
+proxy-id = ""
+
+[queue]
+enabled = false
+master-proxy-ids = [""]
+leave-queue-aliases = ["leavequeue", "dequeue"]
+queue-admin-aliases = ["queueadmin", "qadmin"]
+no-queue-servers = ["lobby"]
+banned-reason = ["banned"]
+allow-multi-queue = false
+send-delay = 1.0
+queue-delay = 0.0
+message-delay = 1.0
+backend-ping-interval = 1.0
+max-send-retries = 10
+remove-player-on-server-switch = true
+queue-server = ""
+queue-on-join = []
+forward-kick-reason = true
+allow-paused-queue-joining = false
+queue-on-shutdown = true
+override-bungee-messaging = true
+dynamic-priority = false
+minutes-per-priority-increase = 30
+max-dynamic-priority = 99
+
+[queue.auto-queue-servers]
+minigames-limbo = ["minigames1", "minigames2"]
+factions-limbo = "factions"
+
+[proxy-addresses]
+dynamic-proxy-filter = "most_empty"
+
+[packet-limiter]
+interval = 7
+packets-per-second = -1
+bytes-per-second = -1
+decompressed-bytes-per-second = 5242880
