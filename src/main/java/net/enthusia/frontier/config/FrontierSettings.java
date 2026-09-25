@@ -88,6 +88,7 @@ public record FrontierSettings(
                 config.getInt("cleanup.max-chunks-per-tick", 1),
                 config.getInt("cleanup.min-player-distance-chunks", 8),
                 config.getDouble("cleanup.max-mspt", 35.0),
+                config.getBoolean("cleanup.audit-log", false),
                 config.getBoolean("cleanup.physical-reclaim", true),
                 config.getBoolean("cleanup.require-supported-adapter", true));
 
