@@ -8,6 +8,44 @@ SOURCE_SHA="${GITHUB_SHA:-local}"
 rm -rf "$WORK"
 mkdir -p "$WORK" "$OUT" "$OUT/EnthusiaTempChallenges" "$OUT/EnthusiaAdvancements/trees" "$OUT/EnthusiaTags"
 
+normalize_jar() {
+  local jar_path="$1"
+  python3 - "$jar_path" <<'PY'
+from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
+import os
+import sys
+
+path = Path(sys.argv[1])
+tmp = path.with_suffix(path.suffix + '.normalized')
+fixed_time = (1980, 1, 1, 0, 0, 0)
+
+with ZipFile(path, 'r') as source, ZipFile(tmp, 'w', allowZip64=True) as target:
+    # Sort by path so source-tool insertion order cannot affect the deployable bytes.
+    # Duplicate names retain their original relative order through the header offset tie-breaker.
+    entries = sorted(source.infolist(), key=lambda info: (info.filename, info.header_offset))
+    for info in entries:
+        data = source.read(info)
+        normalized = ZipInfo(info.filename, fixed_time)
+        normalized.create_system = info.create_system
+        normalized.create_version = info.create_version
+        normalized.extract_version = info.extract_version
+        normalized.external_attr = info.external_attr
+        normalized.internal_attr = info.internal_attr
+        normalized.comment = info.comment
+        # Strip timestamp/platform extra fields. ZIP64 metadata is regenerated if needed.
+        normalized.extra = b''
+        if info.is_dir():
+            normalized.compress_type = ZIP_STORED
+            target.writestr(normalized, b'')
+        else:
+            normalized.compress_type = ZIP_DEFLATED
+            target.writestr(normalized, data, compress_type=ZIP_DEFLATED, compresslevel=9)
+
+os.replace(tmp, path)
+PY
+}
+
 echo '== EnthusiaTempChallenges: tests + package =='
 # verify already runs package/shade; adding a second explicit package goal re-shades
 # sqlite-jdbc into the just-shaded artifact and creates duplicate class entries.
@@ -128,6 +166,11 @@ block='''  # FRONTIER-FIRST-TAGS-BEGIN
 '''
 p.write_text(text.replace(marker, marker+block, 1))
 PY
+
+echo '== Normalize built JARs for byte-reproducible deployment =='
+normalize_jar "$OUT/EnthusiaTempChallenges-0.2.0-frontier.1.jar"
+normalize_jar "$OUT/EnthusiaAdvancements-1.0.0-frontier.jar"
+normalize_jar "$OUT/EnthusiaTags.jar"
 
 echo '== Hash deployable artifacts =='
 cd "$ROOT"
