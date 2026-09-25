@@ -50,11 +50,24 @@ if [[ -z "$SPIGOT_REMAPPED" || ! -s "$SPIGOT_REMAPPED" ]]; then
 fi
 # BuildTools #201 currently stores the --remapped Mojang-mapped development JAR
 # with classifier "remapped". UAA 2.8.1 requests the historical documented
-# classifier "remapped-mojang". Install the exact BuildTools output under that
-# classifier as a local Maven alias; UAA compilation and the real Leaf smoke
-# below then verify both namespace compatibility and runtime remapping.
+# classifier "remapped-mojang". Never point install-file at the local repository
+# artifact itself: Maven may replace/remove files in that coordinate while it is
+# installing the alias. Stage an immutable copy outside ~/.m2 first, verify that
+# the bytes match, then install that copy under the classifier UAA expects.
+SPIGOT_ALIAS_SOURCE="$WORK/spigot-1.21.11-remapped-mojang-source.jar"
+cp -- "$SPIGOT_REMAPPED" "$SPIGOT_ALIAS_SOURCE"
+if [[ ! -s "$SPIGOT_ALIAS_SOURCE" ]]; then
+  echo 'Could not stage the BuildTools remapped JAR outside the local Maven repository.' >&2
+  exit 1
+fi
+SPIGOT_REMAPPED_SHA256="$(sha256sum "$SPIGOT_REMAPPED" | awk '{print $1}')"
+SPIGOT_ALIAS_SOURCE_SHA256="$(sha256sum "$SPIGOT_ALIAS_SOURCE" | awk '{print $1}')"
+if [[ "$SPIGOT_REMAPPED_SHA256" != "$SPIGOT_ALIAS_SOURCE_SHA256" ]]; then
+  echo 'Staged remapped JAR does not match the exact BuildTools artifact.' >&2
+  exit 1
+fi
 mvn -B --no-transfer-progress org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
-  -Dfile="$SPIGOT_REMAPPED" \
+  -Dfile="$SPIGOT_ALIAS_SOURCE" \
   -DgroupId=org.spigotmc \
   -DartifactId=spigot \
   -Dversion=1.21.11-R0.1-SNAPSHOT \
@@ -66,7 +79,11 @@ if [[ -z "$SPIGOT_MOJANG" || ! -s "$SPIGOT_MOJANG" ]]; then
   echo 'Could not create the local remapped-mojang classifier alias expected by UAA.' >&2
   exit 1
 fi
-echo "Provisioned $(basename "$SPIGOT_MOJANG") from pinned BuildTools #${BUILDTOOLS_BUILD} output."
+if [[ "$(sha256sum "$SPIGOT_MOJANG" | awk '{print $1}')" != "$SPIGOT_REMAPPED_SHA256" ]]; then
+  echo 'Installed remapped-mojang alias does not match the exact BuildTools remapped JAR.' >&2
+  exit 1
+fi
+echo "Provisioned $(basename "$SPIGOT_MOJANG") from pinned BuildTools #${BUILDTOOLS_BUILD} output (${SPIGOT_REMAPPED_SHA256})."
 
 echo '== UltimateAdvancementAPI: pinned 2.8.1 plugin source, 1.21.11 adapter only =='
 git clone --quiet https://github.com/frengor/UltimateAdvancementAPI.git "$WORK/uaa"
