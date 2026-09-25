@@ -27,8 +27,12 @@ foreach ($relative in @(
     'config\gale-global.yml',
     'config\gale-world-defaults.yml',
     'plugins\PlaceholderAPI\config.yml',
+    'plugins\TAB\config.yml',
     'world\datapacks\enthusia-frontier-test\pack.mcmeta',
-    'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\load.mcfunction'
+    'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\load.mcfunction',
+    'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\tick.mcfunction',
+    'world\datapacks\enthusia-frontier-test\data\minecraft\tags\function\load.json',
+    'world\datapacks\enthusia-frontier-test\data\minecraft\tags\function\tick.json'
 )) { Require-File $relative | Out-Null }
 
 $leaf = [System.IO.File]::ReadAllText((Join-Path $Root 'config\leaf-global.yml'))
@@ -36,13 +40,25 @@ if ($leaf -notmatch '(?s)secure-seed:\s*\r?\n\s*enabled:\s*true') { throw 'Leaf 
 
 $properties = [System.IO.File]::ReadAllText((Join-Path $Root 'server.properties'))
 if ($properties -notmatch '(?m)^online-mode=false\s*$') { throw 'Backend must remain offline-mode behind Velocity modern forwarding.' }
+if ($properties -notmatch '(?m)^max-world-size=5000\s*$') { throw 'max-world-size must allow the full +/-5000 Overworld.' }
 if ($properties -notmatch '(?m)^feature-level-seed=\s*$') {
     Write-Warning 'feature-level-seed is populated or missing. Keep the live value private and verify this was intentional.'
 }
 
 $borderFunction = [System.IO.File]::ReadAllText((Join-Path $Root 'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\load.mcfunction'))
-foreach ($width in @('5000','2500','1000')) {
-    if ($borderFunction -notmatch ('worldborder set ' + $width + '(\s|$)')) { throw "Border datapack is missing width $width." }
+if ($borderFunction -notmatch 'execute in minecraft:overworld run worldborder set 10000(?:\s|$)') { throw 'Overworld border must be 10000 wide (+/-5000).' }
+if ($borderFunction -notmatch 'execute in minecraft:the_nether run worldborder set 5000(?:\s|$)') { throw 'Nether border must be 5000 wide (+/-2500).' }
+if ($borderFunction -notmatch 'execute in minecraft:the_end run worldborder set 5000(?:\s|$)') { throw 'End border must be 5000 wide (+/-2500).' }
+
+$elytraPolicy = [System.IO.File]::ReadAllText((Join-Path $Root 'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\tick.mcfunction'))
+if ($elytraPolicy -notmatch 'item_frame.*minecraft:elytra') { throw 'No-Elytra policy is missing the End Ship item-frame guard.' }
+if ($elytraPolicy -notmatch 'clear @a minecraft:elytra') { throw 'No-Elytra policy is missing the player inventory guard.' }
+$tickTag = [System.IO.File]::ReadAllText((Join-Path $Root 'world\datapacks\enthusia-frontier-test\data\minecraft\tags\function\tick.json'))
+if ($tickTag -notmatch 'enthusia_test:tick') { throw 'No-Elytra tick function is not registered.' }
+
+$tab = [System.IO.File]::ReadAllText((Join-Path $Root 'plugins\TAB\config.yml'))
+foreach ($forbidden in @('%lumaguilds_', '%vault_eco_', '%enthusiarep_', '%floodgate%', '%nexo_')) {
+    if ($tab.Contains($forbidden)) { throw "TAB config still contains dependency-sensitive placeholder: $forbidden" }
 }
 
 foreach ($relative in @('config\paper-global.yml','plugins\LuckPerms\config.yml','plugins\Nexo\settings.yml')) {
@@ -78,5 +94,5 @@ if (-not (Get-ChildItem -LiteralPath $plugins -Filter 'EnthusiaAdvancements*.jar
 if (-not (Get-ChildItem -LiteralPath $plugins -Filter 'UltimateAdvancementAPI*.jar' -File -ErrorAction SilentlyContinue)) { throw 'UltimateAdvancementAPI JAR is not present yet.' }
 
 Write-Host 'FRONTIER_TEST_RUNTIME_READY' -ForegroundColor Green
-Write-Host 'Runtime files, fixed binary hashes, Secure Seed config, borders and challenge dependencies are present.'
+Write-Host 'Runtime files, fixed binary hashes, Secure Seed config, corrected borders, no-Elytra policy and challenge dependencies are present.'
 Write-Host 'Still perform FIRST-BOOT-CHECKLIST.md live checks before admitting players.'
