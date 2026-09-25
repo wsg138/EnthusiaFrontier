@@ -28,7 +28,9 @@ try {
         if ($lines[$i] -match '^\s*(FRONTIER_TEST|FRONTIERTEST)\s*=') { $lines.RemoveAt($i) }
     }
     $servers = -1
-    for ($i=0; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^\[servers\]\s*$') { $servers=$i; break } }
+    for ($i=0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\[servers\]\s*$') { $servers=$i; break }
+    }
     if ($servers -lt 0) { throw 'velocity.toml has no [servers] table.' }
     $insert = $servers + 1
     while ($insert -lt $lines.Count -and $lines[$insert] -notmatch '^\[') { $insert++ }
@@ -36,31 +38,61 @@ try {
     [System.IO.File]::WriteAllLines($VelocityTomlPath, $lines.ToArray(), $Utf8)
 
     $velocityText = [System.IO.File]::ReadAllText($VelocityTomlPath)
-    if ([regex]::Matches($velocityText, '(?m)^\s*FRONTIER_TEST\s*=').Count -ne 1) { throw 'Expected exactly one FRONTIER_TEST backend.' }
+    if ([regex]::Matches($velocityText, '(?m)^\s*FRONTIER_TEST\s*=').Count -ne 1) {
+        throw 'Expected exactly one FRONTIER_TEST backend.'
+    }
     foreach ($m in [regex]::Matches($velocityText, '(?m)^\s*try\s*=\s*\[(.*?)\]')) {
-        if ($m.Groups[1].Value -match 'FRONTIER_TEST|FRONTIERTEST') { throw 'FRONTIER_TEST must not be in the fallback try list.' }
+        if ($m.Groups[1].Value -match 'FRONTIER_TEST|FRONTIERTEST') {
+            throw 'FRONTIER_TEST must not be in the fallback try list.'
+        }
     }
 
     $groupSource = Join-Path $PSScriptRoot 'plugins\velocitab\frontier-test-group.yml'
-    $groupBlock = [System.IO.File]::ReadAllText($groupSource).Split("`n",2)[1]
+    if (-not (Test-Path -LiteralPath $groupSource -PathType Leaf)) {
+        throw "Missing Frontier VeloTAB group template: $groupSource"
+    }
+    $groupSourceLines = [System.IO.File]::ReadAllLines($groupSource)
+    $groupStart = -1
+    for ($i = 0; $i -lt $groupSourceLines.Length; $i++) {
+        if ($groupSourceLines[$i] -match '^- name:\s*FRONTIER_TEST\s*$') { $groupStart = $i; break }
+    }
+    if ($groupStart -lt 0) { throw 'Frontier VeloTAB template does not contain a FRONTIER_TEST group.' }
+    $groupLines = $groupSourceLines[$groupStart..($groupSourceLines.Length - 1)]
+
     $tabLines = [System.Collections.Generic.List[string]]::new()
     [System.IO.File]::ReadAllLines($VeloTabGroupsPath) | ForEach-Object { [void]$tabLines.Add($_) }
-    $start = -1; $end = -1
+    if (-not ($tabLines | Where-Object { $_ -match '^groups:\s*$' })) {
+        throw 'VeloTAB groups file has no top-level groups: key.'
+    }
+
+    $start = -1
+    $end = -1
     for ($i=0; $i -lt $tabLines.Count; $i++) {
         if ($tabLines[$i] -match '^- name:\s*FRONTIER_TEST\s*$') {
-            $start=$i; $end=$tabLines.Count
-            for ($j=$i+1; $j -lt $tabLines.Count; $j++) { if ($tabLines[$j] -match '^- name:\s*') { $end=$j; break } }
+            $start=$i
+            $end=$tabLines.Count
+            for ($j=$i+1; $j -lt $tabLines.Count; $j++) {
+                if ($tabLines[$j] -match '^- name:\s*') { $end=$j; break }
+            }
             break
         }
     }
-    if ($start -ge 0) { for ($i=$end-1; $i -ge $start; $i--) { $tabLines.RemoveAt($i) } }
-    if ($tabLines.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($tabLines[$tabLines.Count-1])) { [void]$tabLines.Add('') }
-    ($groupBlock -split "`r?`n") | ForEach-Object { [void]$tabLines.Add($_) }
+    if ($start -ge 0) {
+        for ($i=$end-1; $i -ge $start; $i--) { $tabLines.RemoveAt($i) }
+    }
+    if ($tabLines.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($tabLines[$tabLines.Count-1])) {
+        [void]$tabLines.Add('')
+    }
+    $groupLines | ForEach-Object { [void]$tabLines.Add($_) }
     [System.IO.File]::WriteAllLines($VeloTabGroupsPath, $tabLines.ToArray(), $Utf8)
 
     $tabText = [System.IO.File]::ReadAllText($VeloTabGroupsPath)
-    if ([regex]::Matches($tabText, '(?m)^- name:\s*FRONTIER_TEST\s*$').Count -ne 1) { throw 'Expected exactly one FRONTIER_TEST VeloTAB group.' }
-    if ($tabText -match '(?s)- name:\s*FRONTIER_TEST.*?%(lumaguilds|vault_eco|enthusiarep)_') { throw 'Frontier VeloTAB group contains a missing-plugin placeholder.' }
+    if ([regex]::Matches($tabText, '(?m)^- name:\s*FRONTIER_TEST\s*$').Count -ne 1) {
+        throw 'Expected exactly one FRONTIER_TEST VeloTAB group.'
+    }
+    if ($tabText -match '(?s)- name:\s*FRONTIER_TEST.*?%(lumaguilds|vault_eco|enthusiarep)_') {
+        throw 'Frontier VeloTAB group contains a missing-plugin placeholder.'
+    }
 }
 catch {
     Copy-Item -LiteralPath $velocityBackup -Destination $VelocityTomlPath -Force
