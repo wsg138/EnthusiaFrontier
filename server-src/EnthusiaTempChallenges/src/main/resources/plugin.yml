@@ -1,0 +1,19 @@
+name: EnthusiaTempChallenges
+version: 0.2.0-frontier.1
+main: org.enthusia.tempchallenges.paper.TempChallengesPlugin
+api-version: '1.21'
+author: Enthusia
+load: POSTWORLD
+softdepend: [Floodgate, GrimAC, EnthusiaStaff, EnthusiaAdvancements, EnthusiaTags, LuckPerms]
+commands:
+  challenges:
+    description: Show Frontier First challenge status.
+    usage: /challenges
+  tempchallenge:
+    description: Admin and review tools for Frontier Firsts.
+    usage: /tempchallenge <status|verify|export|reconcile|revoke-first|test>
+permissions:
+  enthusia.tempchallenges.admin:
+    default: op
+  enthusia.tempchallenges.excluded:
+    default: false

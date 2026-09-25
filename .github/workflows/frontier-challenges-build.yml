@@ -1,0 +1,109 @@
+name: Frontier challenge runtime build
+
+on:
+  push:
+    branches: [server/frontier-test-runtime]
+    paths:
+      - 'server-src/EnthusiaTempChallenges/**'
+      - 'server/plugins/EnthusiaAdvancements/trees/frontier_firsts.conf'
+      - 'tools/build-frontier-challenges.sh'
+      - '.github/workflows/frontier-challenges-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: frontier-challenge-runtime-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-test-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build, test, and assemble runtime
+        run: bash tools/build-frontier-challenges.sh
+      - name: Preserve built runtime before reconciling branch
+        run: |
+          mkdir -p "$RUNNER_TEMP/frontier-built"
+          cp server/plugins/EnthusiaTempChallenges-0.2.0-frontier.1.jar "$RUNNER_TEMP/frontier-built/"
+          cp server/plugins/EnthusiaAdvancements-1.0.0-frontier.jar "$RUNNER_TEMP/frontier-built/"
+          cp server/plugins/UltimateAdvancementAPI-2.8.1.jar "$RUNNER_TEMP/frontier-built/"
+          cp server/plugins/EnthusiaTags.jar "$RUNNER_TEMP/frontier-built/"
+          cp server/plugins/EnthusiaTempChallenges/config.yml "$RUNNER_TEMP/frontier-built/temp-config.yml"
+          cp server/plugins/EnthusiaTags/config.yml "$RUNNER_TEMP/frontier-built/tags-config.yml"
+          cp server/PLUGIN-SHA256SUMS.txt "$RUNNER_TEMP/frontier-built/"
+      - name: Commit exact deployable runtime binaries without overwriting parallel work
+        if: github.ref == 'refs/heads/server/frontier-test-runtime'
+        run: |
+          set -euo pipefail
+          git fetch origin server/frontier-test-runtime
+          REMOTE=origin/server/frontier-test-runtime
+          if ! git diff --quiet "$GITHUB_SHA" "$REMOTE" -- server-src/EnthusiaTempChallenges tools/build-frontier-challenges.sh server/plugins/EnthusiaAdvancements/trees/frontier_firsts.conf; then
+            echo 'Challenge source changed after this workflow started; refusing to publish stale binaries.' >&2
+            exit 1
+          fi
+          git reset --hard "$REMOTE"
+          cp "$RUNNER_TEMP/frontier-built/EnthusiaTempChallenges-0.2.0-frontier.1.jar" server/plugins/
+          cp "$RUNNER_TEMP/frontier-built/EnthusiaAdvancements-1.0.0-frontier.jar" server/plugins/
+          cp "$RUNNER_TEMP/frontier-built/UltimateAdvancementAPI-2.8.1.jar" server/plugins/
+          cp "$RUNNER_TEMP/frontier-built/EnthusiaTags.jar" server/plugins/
+          mkdir -p server/plugins/EnthusiaTempChallenges server/plugins/EnthusiaTags
+          cp "$RUNNER_TEMP/frontier-built/temp-config.yml" server/plugins/EnthusiaTempChallenges/config.yml
+          cp "$RUNNER_TEMP/frontier-built/tags-config.yml" server/plugins/EnthusiaTags/config.yml
+          cp "$RUNNER_TEMP/frontier-built/PLUGIN-SHA256SUMS.txt" server/PLUGIN-SHA256SUMS.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          manifest=Path('server/BINARY-MANIFEST.yml')
+          text=manifest.read_text()
+          begin='# FRONTIER-CHALLENGE-ARTIFACTS-BEGIN'
+          end='# FRONTIER-CHALLENGE-ARTIFACTS-END'
+          if begin in text:
+              text=text[:text.index(begin)].rstrip()+"\n"
+          hashes={}
+          for line in Path('server/PLUGIN-SHA256SUMS.txt').read_text().splitlines():
+              sha,path=line.split(None,1)
+              hashes[Path(path).name]=sha
+          block=f'''\n{begin}\nchallenge_runtime:\n  source_commit: {os.environ['GITHUB_SHA']}\n  java: 21\n  paper_api: 1.21.11-R0.1-SNAPSHOT\n  sqlite_jdbc: 3.53.4.0\n  luckperms_api: '5.4'\n  floodgate_api: 2.2.5-SNAPSHOT\n  badgers_advancements_source: 42e901473234f5b69c07d5416565d80addbb197d\n  ultimate_advancement_api: 2.8.1\n  enthusia_tags_source: 261efb9144216ae86a4a2c8ed406a7f44dcae851\n  artifacts:\n'''
+          for name,sha in hashes.items():
+              block+=f"    {name}: {sha}\n"
+          block+=end+'\n'
+          manifest.write_text(text+block)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f \
+            server/plugins/EnthusiaTempChallenges-0.2.0-frontier.1.jar \
+            server/plugins/EnthusiaAdvancements-1.0.0-frontier.jar \
+            server/plugins/UltimateAdvancementAPI-2.8.1.jar \
+            server/plugins/EnthusiaTags.jar \
+            server/plugins/EnthusiaTempChallenges/config.yml \
+            server/plugins/EnthusiaTags/config.yml \
+            server/PLUGIN-SHA256SUMS.txt \
+            server/BINARY-MANIFEST.yml
+          if git diff --cached --quiet; then
+            echo 'Runtime artifacts already match source.'
+          else
+            git commit -m 'Build deployable Frontier challenge runtime'
+            git push origin HEAD:server/frontier-test-runtime
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontier-challenge-runtime
+          if-no-files-found: error
+          path: |
+            server/plugins/EnthusiaTempChallenges-0.2.0-frontier.1.jar
+            server/plugins/EnthusiaAdvancements-1.0.0-frontier.jar
+            server/plugins/UltimateAdvancementAPI-2.8.1.jar
+            server/plugins/EnthusiaTags.jar
+            server/PLUGIN-SHA256SUMS.txt

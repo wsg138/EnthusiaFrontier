@@ -1,0 +1,1 @@
+package org.enthusia.tempchallenges.domain; public record ClaimResult(ClaimDecision decision,WinnerRecord winner,String message){public boolean claimed(){return decision==ClaimDecision.CLAIMED;} public static ClaimResult of(ClaimDecision d,WinnerRecord w,String m){return new ClaimResult(d,w,m==null?"":m);}}
