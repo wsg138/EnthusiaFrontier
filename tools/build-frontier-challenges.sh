@@ -33,7 +33,7 @@ cp "$ROOT/server-src/EnthusiaTempChallenges/src/main/resources/config.yml" "$OUT
 echo '== UltimateAdvancementAPI: pinned 2.8.1 plugin source =='
 git clone --quiet https://github.com/frengor/UltimateAdvancementAPI.git "$WORK/uaa"
 git -C "$WORK/uaa" checkout --quiet 67d9576ae5e4ec55701ac653194bb77c5f1e708c
-( cd "$WORK/uaa" && mvn -B --no-transfer-progress -DskipTests -f Plugin/pom.xml package )
+( cd "$WORK/uaa" && mvn -B --no-transfer-progress -DskipTests -pl Plugin -am package )
 UAA_JAR="$WORK/uaa/Plugin/target/UltimateAdvancementAPI-Plugin-2.8.1-Mojang-Mapped-Legacy.jar"
 if [[ ! -s "$UAA_JAR" ]]; then
   echo "Pinned UltimateAdvancementAPI plugin JAR was not produced: $UAA_JAR" >&2
