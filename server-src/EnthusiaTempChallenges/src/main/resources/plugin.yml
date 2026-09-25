@@ -11,7 +11,7 @@ commands:
     usage: /challenges
   tempchallenge:
     description: Admin and review tools for Frontier Firsts.
-    usage: /tempchallenge <status|verify|export|reconcile|revoke-first|test>
+    usage: /tempchallenge <status|verify|export|reconcile|revoke-first|award-first|test>
 permissions:
   enthusia.tempchallenges.admin:
     default: op
