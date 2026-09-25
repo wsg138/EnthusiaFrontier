@@ -1,0 +1,18 @@
+# Enthusia Frontier Test - minimal Purpur configuration inherited by Leaf.
+# Unspecified settings use the runtime's Purpur defaults.
+verbose: false
+settings:
+  register-minecraft-debug-commands: false
+  register-minecraft-disabled-commands: false
+  tps-catchup: true
+  fix-projectile-looting-transfer: false
+  clamp-attributes: true
+  limit-armor: true
+  player-deaths-always-show-item: false
+  startup-commands: []
+  broadcasts:
+    advancement:
+      only-broadcast-to-affected-player: false
+    death:
+      only-broadcast-to-affected-player: false
+  lagging-threshold: 19.0
