@@ -30,9 +30,32 @@ mvn -B --no-transfer-progress -f "$ROOT/server-src/EnthusiaTempChallenges/pom.xm
 cp "$ROOT/server-src/EnthusiaTempChallenges/target/EnthusiaTempChallenges-0.2.0-frontier.1.jar" "$OUT/EnthusiaTempChallenges-0.2.0-frontier.1.jar"
 cp "$ROOT/server-src/EnthusiaTempChallenges/src/main/resources/config.yml" "$OUT/EnthusiaTempChallenges/config.yml"
 
-echo '== UltimateAdvancementAPI: pinned 2.8.1 plugin source =='
+echo '== UltimateAdvancementAPI: pinned 2.8.1 plugin source, 1.21.11 adapter only =='
 git clone --quiet https://github.com/frengor/UltimateAdvancementAPI.git "$WORK/uaa"
 git -C "$WORK/uaa" checkout --quiet 67d9576ae5e4ec55701ac653194bb77c5f1e708c
+python3 - "$WORK/uaa" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+
+def restrict_distribution(path: Path, mojang: bool) -> None:
+    text = path.read_text()
+    start = text.index('    <dependencies>')
+    end = text.index('    </dependencies>', start) + len('    </dependencies>')
+    classifier = '\n            <classifier>mojang-mapped-legacy</classifier>' if mojang else ''
+    replacement = f'''    <dependencies>
+        <!-- Frontier runtime is pinned to Minecraft 1.21.11 / NMS 1_21_R7. -->
+        <dependency>
+            <groupId>com.frengor</groupId>
+            <artifactId>ultimateadvancementapi-nms-1_21_R7</artifactId>
+            <version>${{project.version}}</version>{classifier}
+        </dependency>
+    </dependencies>'''
+    path.write_text(text[:start] + replacement + text[end:])
+
+restrict_distribution(root / 'NMS/Distribution/pom.xml', False)
+restrict_distribution(root / 'NMS/DistributionMojangMapped/pom.xml', True)
+PY
 ( cd "$WORK/uaa" && mvn -B --no-transfer-progress -DskipTests -Dmaven.javadoc.skip=true -pl Plugin -am package )
 UAA_JAR="$WORK/uaa/Plugin/target/UltimateAdvancementAPI-Plugin-2.8.1-Mojang-Mapped-Legacy.jar"
 if [[ ! -s "$UAA_JAR" ]]; then
