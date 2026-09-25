@@ -1,0 +1,111 @@
+name: Publish Frontier server runtime binaries
+
+on:
+  push:
+    branches: [server/frontier-test-runtime]
+    paths:
+      - 'src/**'
+      - 'build.gradle.kts'
+      - 'gradle.properties'
+      - 'settings.gradle.kts'
+      - '.github/workflows/frontier-server-runtime-binaries.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: frontier-server-runtime-binaries-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Build and verify Frontier 0.1.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle clean check shadowJar --no-daemon
+          mapfile -t jars < <(find build/libs -maxdepth 1 -type f -name 'EnthusiaFrontier-*.jar' | sort)
+          test "${#jars[@]}" -eq 1
+          cp "${jars[0]}" "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar"
+          echo '74b90cafbd96cdbd9a51d07bc897b223161eab87bb7014416d662250442aeefa  '"$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" | sha256sum -c -
+
+      - name: Download and verify stable Leaf runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            'https://github.com/Winds-Studio/Leaf/releases/download/ver-1.21.11/leaf-1.21.11-179.jar' \
+            -o "$RUNNER_TEMP/leaf-1.21.11-179.jar"
+          echo '5da79782215c1a25edcd7c73b3523b7ecb7f4b86dc8a5846a176ed69bc2cd020  '"$RUNNER_TEMP/leaf-1.21.11-179.jar" | sha256sum -c -
+
+      - name: Upload exact runtime binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontier-server-runtime-binaries
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/EnthusiaFrontier-0.1.1.jar
+            ${{ runner.temp }}/leaf-1.21.11-179.jar
+
+      - name: Commit binaries without overwriting parallel work
+        if: github.ref == 'refs/heads/server/frontier-test-runtime'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          for attempt in $(seq 1 20); do
+            echo "Publication attempt $attempt/20"
+            git fetch origin server/frontier-test-runtime
+            REMOTE=origin/server/frontier-test-runtime
+
+            if ! git diff --quiet "$GITHUB_SHA" "$REMOTE" -- \
+              src build.gradle.kts gradle.properties settings.gradle.kts \
+              .github/workflows/frontier-server-runtime-binaries.yml; then
+              echo 'Frontier source/build definition changed after this run started; refusing to publish stale binaries.' >&2
+              exit 1
+            fi
+
+            git reset --hard "$REMOTE"
+            cp "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" server/plugins/EnthusiaFrontier-0.1.1.jar
+            cp "$RUNNER_TEMP/leaf-1.21.11-179.jar" server/leaf-1.21.11-179.jar
+
+            echo '74b90cafbd96cdbd9a51d07bc897b223161eab87bb7014416d662250442aeefa  server/plugins/EnthusiaFrontier-0.1.1.jar' | sha256sum -c -
+            echo '5da79782215c1a25edcd7c73b3523b7ecb7f4b86dc8a5846a176ed69bc2cd020  server/leaf-1.21.11-179.jar' | sha256sum -c -
+
+            git add -f server/plugins/EnthusiaFrontier-0.1.1.jar server/leaf-1.21.11-179.jar
+            if git diff --cached --quiet; then
+              echo 'Runtime binaries already match the validated artifacts.'
+              exit 0
+            fi
+
+            git commit -m 'Publish validated Leaf and Frontier runtime binaries'
+            if git push origin HEAD:server/frontier-test-runtime; then
+              echo 'Published Leaf and Frontier runtime binaries.'
+              exit 0
+            fi
+
+            sleep 1
+          done
+
+          echo 'Could not publish runtime binaries after 20 race-safe attempts.' >&2
+          exit 1

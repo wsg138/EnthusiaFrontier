@@ -28,6 +28,9 @@ foreach ($relative in @(
     'config\gale-world-defaults.yml',
     'plugins\PlaceholderAPI\config.yml',
     'plugins\TAB\config.yml',
+    'plugins\EnthusiaTempChallenges\config.yml',
+    'plugins\EnthusiaTags\config.yml',
+    'plugins\EnthusiaAdvancements\trees\frontier_firsts.conf',
     'world\datapacks\enthusia-frontier-test\pack.mcmeta',
     'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\load.mcfunction',
     'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\tick.mcfunction',
@@ -41,6 +44,7 @@ if ($leaf -notmatch '(?s)secure-seed:\s*\r?\n\s*enabled:\s*true') { throw 'Leaf 
 $properties = [System.IO.File]::ReadAllText((Join-Path $Root 'server.properties'))
 if ($properties -notmatch '(?m)^online-mode=false\s*$') { throw 'Backend must remain offline-mode behind Velocity modern forwarding.' }
 if ($properties -notmatch '(?m)^max-world-size=5000\s*$') { throw 'max-world-size must allow the full +/-5000 Overworld.' }
+if ($properties -notmatch '(?m)^initial-enabled-packs=vanilla,file/enthusia-frontier-test\s*$') { throw 'Frontier bootstrap datapack must be explicitly enabled for first world creation.' }
 if ($properties -notmatch '(?m)^feature-level-seed=\s*$') {
     Write-Warning 'feature-level-seed is populated or missing. Keep the live value private and verify this was intentional.'
 }
@@ -55,6 +59,10 @@ if ($elytraPolicy -notmatch 'item_frame.*minecraft:elytra') { throw 'No-Elytra p
 if ($elytraPolicy -notmatch 'clear @a minecraft:elytra') { throw 'No-Elytra policy is missing the player inventory guard.' }
 $tickTag = [System.IO.File]::ReadAllText((Join-Path $Root 'world\datapacks\enthusia-frontier-test\data\minecraft\tags\function\tick.json'))
 if ($tickTag -notmatch 'enthusia_test:tick') { throw 'No-Elytra tick function is not registered.' }
+
+$challengeConfig = [System.IO.File]::ReadAllText((Join-Path $Root 'plugins\EnthusiaTempChallenges\config.yml'))
+if ($challengeConfig -notmatch '(?s)first_elytra:.*?locked:\s*true') { throw 'First Elytra challenge must remain locked.' }
+if ($challengeConfig -notmatch '(?m)^\s*state:\s*ACTIVE\s*$') { throw 'Frontier challenge event is not ACTIVE.' }
 
 $tab = [System.IO.File]::ReadAllText((Join-Path $Root 'plugins\TAB\config.yml'))
 foreach ($forbidden in @('%lumaguilds_', '%vault_eco_', '%enthusiarep_', '%floodgate%', '%nexo_')) {
@@ -77,10 +85,13 @@ $known = @{
     'plugins\LuckPerms-Bukkit-5.5.53.jar'='fc8d4eccbf11c1e844af4527f018bbfde90c1866a9aba1bf880173a8e644cd59'
     'plugins\floodgate-spigot.jar'='21570aff9ce17d6983928e8552777760e1ede5050026b04c686b0ae112e6fd7e'
     'plugins\BedrockWindChargeFix-1.0.0.jar'='ddd4583ed2b3ba9c90a8293936f4cb6ff8b990d4233646de6d80d91528155d8d'
-    'plugins\EnthusiaTags.jar'='69aa6474c6de27e160d3ccfe33a56dd9674b60ec92ddb2658af3553cb272c83d'
     'plugins\nexo-1.22.1.jar'='8771545bf1d29500641c29733a741f863eccbf7dbf43217691dee8de33d43bac'
     'plugins\PlaceholderAPI-2.12.3.jar'='fde03259f5af6938f3c33eeb4d814000a1adabf1d2304ce14970be81f609a437'
     'plugins\TAB-v5.5.0.jar'='829e7ec22bc41069d93b53479a8fe4a335a579c9c5b37a4cf140da176aea65f6'
+    'plugins\EnthusiaTempChallenges-0.2.0-frontier.1.jar'='93f82219518bd6550525dc29608f239066176d6a56cf718e3b246d5ee6b6401b'
+    'plugins\EnthusiaAdvancements-1.0.0-frontier.jar'='9733423a2f0fa0bbaa15f7accca8390007e88f50affaff97aa6d0f24f18a1eae'
+    'plugins\UltimateAdvancementAPI-2.8.1.jar'='c6dfff5238eb119207c7a1e98c3246c5751da0c44504789c055a73e662d0b55b'
+    'plugins\EnthusiaTags.jar'='8aee3c250bdb66f9cb9641e3a5c2cbdb0336a96fca5afdc0488735bd8af13fe4'
 }
 foreach ($entry in $known.GetEnumerator()) { Check-Hash $entry.Key $entry.Value }
 
@@ -89,10 +100,6 @@ foreach ($pattern in @('Chunky*.jar','LumaGuilds*.jar','EnthusiaTeleport*.jar'))
     if (Get-ChildItem -LiteralPath $plugins -Filter $pattern -File -ErrorAction SilentlyContinue) { throw "Forbidden minimal-server plugin present: $pattern" }
 }
 
-if (-not (Get-ChildItem -LiteralPath $plugins -Filter 'EnthusiaTempChallenges*.jar' -File -ErrorAction SilentlyContinue)) { throw 'Challenge worker JAR is not present yet.' }
-if (-not (Get-ChildItem -LiteralPath $plugins -Filter 'EnthusiaAdvancements*.jar' -File -ErrorAction SilentlyContinue)) { throw 'EnthusiaAdvancements JAR is not present yet.' }
-if (-not (Get-ChildItem -LiteralPath $plugins -Filter 'UltimateAdvancementAPI*.jar' -File -ErrorAction SilentlyContinue)) { throw 'UltimateAdvancementAPI JAR is not present yet.' }
-
 Write-Host 'FRONTIER_TEST_RUNTIME_READY' -ForegroundColor Green
-Write-Host 'Runtime files, fixed binary hashes, Secure Seed config, corrected borders, no-Elytra policy and challenge dependencies are present.'
+Write-Host 'Runtime files, exact binary hashes, Secure Seed config, corrected borders, no-Elytra policy and challenge runtime all validate.'
 Write-Host 'Still perform FIRST-BOOT-CHECKLIST.md live checks before admitting players.'

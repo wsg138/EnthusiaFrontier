@@ -14,7 +14,7 @@ $SourcePlugins = Join-Path $SourceSmpRoot 'plugins'
 
 function Assert-Sha256 {
     param([string]$Path, [string]$Expected)
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Missing source file: $Path" }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Missing file: $Path" }
     $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $Expected.ToLowerInvariant()) {
         throw "SHA-256 mismatch for $Path`nExpected: $Expected`nActual:   $actual"
@@ -26,6 +26,20 @@ function Copy-Verified {
     Assert-Sha256 $Source $Sha256
     New-Item -ItemType Directory -Path (Split-Path -Parent $Destination) -Force | Out-Null
     Copy-Item -LiteralPath $Source -Destination $Destination -Force
+}
+
+function Ensure-LeafRuntime {
+    $jar = Join-Path $ServerRoot 'leaf-1.21.11-179.jar'
+    $sha = '5da79782215c1a25edcd7c73b3523b7ecb7f4b86dc8a5846a176ed69bc2cd020'
+    if (-not (Test-Path -LiteralPath $jar -PathType Leaf)) {
+        $url = 'https://github.com/Winds-Studio/Leaf/releases/download/ver-1.21.11/leaf-1.21.11-179.jar'
+        $tmp = "$jar.download"
+        Write-Host 'Downloading verified Leaf 1.21.11 build 179...'
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmp
+        Assert-Sha256 $tmp $sha
+        Move-Item -LiteralPath $tmp -Destination $jar -Force
+    }
+    Assert-Sha256 $jar $sha
 }
 
 function Get-PaperVelocitySecret {
@@ -81,6 +95,22 @@ function Set-PaperVelocitySecret {
     throw "Could not replace proxies.velocity.secret in $Path"
 }
 
+# These four artifacts are built specifically for Frontier Test and are authoritative.
+# Never replace them with older binaries/configs copied from SMP.
+$challengeArtifacts = @{
+    'EnthusiaTempChallenges-0.2.0-frontier.1.jar'='93f82219518bd6550525dc29608f239066176d6a56cf718e3b246d5ee6b6401b'
+    'EnthusiaAdvancements-1.0.0-frontier.jar'='9733423a2f0fa0bbaa15f7accca8390007e88f50affaff97aa6d0f24f18a1eae'
+    'UltimateAdvancementAPI-2.8.1.jar'='c6dfff5238eb119207c7a1e98c3246c5751da0c44504789c055a73e662d0b55b'
+    'EnthusiaTags.jar'='8aee3c250bdb66f9cb9641e3a5c2cbdb0336a96fca5afdc0488735bd8af13fe4'
+}
+foreach ($entry in $challengeArtifacts.GetEnumerator()) {
+    Assert-Sha256 (Join-Path $PluginsRoot $entry.Key) $entry.Value
+}
+if (-not (Test-Path -LiteralPath (Join-Path $PluginsRoot 'EnthusiaTags\config.yml') -PathType Leaf)) {
+    throw 'Frontier-specific EnthusiaTags config is missing.'
+}
+
+# Copy only the regular network/server dependencies from SMP. Challenge artifacts above are excluded.
 $copies = @(
     @{ S='CoreProtect-24.1.jar'; D='CoreProtect-24.1.jar'; H='a7137839a5b20d993e168381dee22136c4ca77979c9d5627ccbdb7c4058d737f' },
     @{ S='InventoryRollbackPlus-1.8.2.jar'; D='InventoryRollbackPlus-1.8.2.jar'; H='2caada5cd90e86767466dd67c5f1b9616adafdccfe561da44d84985e9ffac43d' },
@@ -88,7 +118,6 @@ $copies = @(
     @{ S='LuckPerms-Bukkit-5.5.53.jar'; D='LuckPerms-Bukkit-5.5.53.jar'; H='fc8d4eccbf11c1e844af4527f018bbfde90c1866a9aba1bf880173a8e644cd59' },
     @{ S='floodgate-spigot.jar'; D='floodgate-spigot.jar'; H='21570aff9ce17d6983928e8552777760e1ede5050026b04c686b0ae112e6fd7e' },
     @{ S='BedrockWindChargeFix-1.0.0.jar'; D='BedrockWindChargeFix-1.0.0.jar'; H='ddd4583ed2b3ba9c90a8293936f4cb6ff8b990d4233646de6d80d91528155d8d' },
-    @{ S='EnthusiaTags(1).jar'; D='EnthusiaTags.jar'; H='69aa6474c6de27e160d3ccfe33a56dd9674b60ec92ddb2658af3553cb272c83d' },
     @{ S='nexo-1.22.1.jar'; D='nexo-1.22.1.jar'; H='8771545bf1d29500641c29733a741f863eccbf7dbf43217691dee8de33d43bac' },
     @{ S='PlaceholderAPI-2.12.3.jar'; D='PlaceholderAPI-2.12.3.jar'; H='fde03259f5af6938f3c33eeb4d814000a1adabf1d2304ce14970be81f609a437' },
     @{ S='TAB v5.5.0.jar'; D='TAB-v5.5.0.jar'; H='829e7ec22bc41069d93b53479a8fe4a335a579c9c5b37a4cf140da176aea65f6' }
@@ -97,9 +126,14 @@ foreach ($item in $copies) {
     Copy-Verified (Join-Path $SourcePlugins $item.S) (Join-Path $PluginsRoot $item.D) $item.H
 }
 
+$frontierTarget = Join-Path $PluginsRoot 'EnthusiaFrontier-0.1.1.jar'
 if (-not [string]::IsNullOrWhiteSpace($FrontierJarPath)) {
-    Copy-Verified $FrontierJarPath (Join-Path $PluginsRoot 'EnthusiaFrontier-0.1.1.jar') '74b90cafbd96cdbd9a51d07bc897b223161eab87bb7014416d662250442aeefa'
+    Copy-Verified $FrontierJarPath $frontierTarget '74b90cafbd96cdbd9a51d07bc897b223161eab87bb7014416d662250442aeefa'
 }
+if (-not (Test-Path -LiteralPath $frontierTarget -PathType Leaf)) {
+    throw 'EnthusiaFrontier-0.1.1.jar is missing. Use the branch-published runtime JAR or pass -FrontierJarPath.'
+}
+Assert-Sha256 $frontierTarget '74b90cafbd96cdbd9a51d07bc897b223161eab87bb7014416d662250442aeefa'
 
 # Copy private Floodgate identity material locally; it remains gitignored.
 $sourceFloodgateKey = Join-Path $SourcePlugins 'floodgate\key.pem'
@@ -110,7 +144,7 @@ Copy-Item -LiteralPath $sourceFloodgateKey -Destination (Join-Path $PluginsRoot 
 $sourceLuckPerms = Join-Path $SourcePlugins 'LuckPerms\config.yml'
 if (-not (Test-Path -LiteralPath $sourceLuckPerms -PathType Leaf)) { throw "Missing LuckPerms config: $sourceLuckPerms" }
 $lpText = [System.IO.File]::ReadAllText($sourceLuckPerms)
-if ($lpText -match '<REDACTED>') { throw 'LuckPerms source config is sanitized; use a raw live SMP copy.' }
+if ($lpText -match '<REDACTED>|REPLACE_WITH') { throw 'LuckPerms source config is sanitized; use a raw live SMP copy.' }
 $lpText = [regex]::Replace($lpText, '(?m)^server:\s*.*$', 'server: EnthusiaFrontierTest', 1)
 [System.IO.File]::WriteAllText((Join-Path $PluginsRoot 'LuckPerms\config.yml'), $lpText)
 
@@ -119,19 +153,10 @@ $sourceNexo = Join-Path $SourcePlugins 'Nexo'
 if (-not (Test-Path -LiteralPath $sourceNexo -PathType Container)) { throw "Missing Nexo directory: $sourceNexo" }
 $sourceNexoSettings = Join-Path $sourceNexo 'settings.yml'
 $nexoSettingsText = [System.IO.File]::ReadAllText($sourceNexoSettings)
-if ($nexoSettingsText -match '<REDACTED>') { throw 'Nexo source settings are sanitized; use a raw live SMP copy.' }
-Copy-Item -LiteralPath $sourceNexo -Destination $PluginsRoot -Recurse -Force
-
-# Copy existing Tags presentation config, but deliberately do not copy tags.db/player ownership state.
-$sourceTags = Join-Path $SourcePlugins 'EnthusiaTags'
-if (Test-Path -LiteralPath $sourceTags -PathType Container) {
-    $destTags = Join-Path $PluginsRoot 'EnthusiaTags'
-    New-Item -ItemType Directory -Path $destTags -Force | Out-Null
-    foreach ($name in @('config.yml','cosmetics.yml','messages.yml','rewards.yml')) {
-        $src = Join-Path $sourceTags $name
-        if (Test-Path -LiteralPath $src -PathType Leaf) { Copy-Item -LiteralPath $src -Destination (Join-Path $destTags $name) -Force }
-    }
-}
+if ($nexoSettingsText -match '<REDACTED>|REPLACE_WITH') { throw 'Nexo source settings are sanitized; use a raw live SMP copy.' }
+$destNexo = Join-Path $PluginsRoot 'Nexo'
+if (Test-Path -LiteralPath $destNexo) { Remove-Item -LiteralPath $destNexo -Recurse -Force }
+Copy-Item -LiteralPath $sourceNexo -Destination $destNexo -Recurse -Force
 
 # Reuse the network's modern forwarding secret without printing it.
 $secret = Get-PaperVelocitySecret (Join-Path $SourceSmpRoot 'config\paper-global.yml')
@@ -144,6 +169,9 @@ $props = [regex]::Replace($props, '(?m)^server-port=.*$', "server-port=$BackendP
 $props = [regex]::Replace($props, '(?m)^query\.port=.*$', "query.port=$BackendPort")
 [System.IO.File]::WriteAllText($propertiesPath, $props)
 
+Ensure-LeafRuntime
+
 Write-Host 'Frontier Test runtime populated from the live SMP files.' -ForegroundColor Green
-Write-Host 'Challenge/advancement JARs remain owned by the challenge worker.'
-Write-Host 'Run .\validate-runtime.ps1 before opening the server.'
+Write-Host 'Frontier challenge/advancement/Tags artifacts were preserved and hash-verified.'
+Write-Host 'Running final static runtime validation...'
+& (Join-Path $ServerRoot 'validate-runtime.ps1')
