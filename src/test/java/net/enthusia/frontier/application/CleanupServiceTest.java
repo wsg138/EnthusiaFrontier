@@ -30,6 +30,7 @@ class CleanupServiceTest {
             CleanupResult result = fixture.service.process("world", fixture.candidate(false));
             assertEquals(CleanupResult.DRY_RUN, result);
             assertEquals(0, fixture.storage.clears);
+            assertTrue(fixture.audit.stream().anyMatch(line -> line.contains("outcome=dry_run reason=eligible")));
         } finally {
             fixture.close();
         }
@@ -44,9 +45,11 @@ class CleanupServiceTest {
             assertTrue(await(fixture.journal::isIdle));
             assertEquals(1, fixture.storage.clears);
             assertTrue(fixture.repository.applied.stream().anyMatch(FrontierMutation.Deleted.class::isInstance));
+            assertTrue(fixture.audit.stream().anyMatch(line -> line.contains("outcome=cleared")));
             assertEquals(
                     RegionReclaimResult.RECLAIMED,
                     fixture.service.reclaim("world", RegionKey.fromChunk(candidate.key())));
+            assertTrue(fixture.audit.stream().anyMatch(line -> line.contains("stage=region outcome=reclaimed")));
         } finally {
             fixture.close();
         }
@@ -59,6 +62,7 @@ class CleanupServiceTest {
             assertEquals(CleanupResult.LATCHED, fixture.service.process("world", fixture.candidate(false)));
             assertTrue(fixture.latch.isTripped());
             assertEquals(0, fixture.storage.clears);
+            assertTrue(fixture.audit.stream().anyMatch(line -> line.contains("reason=missing_reclaim_intent")));
         } finally {
             fixture.close();
         }
@@ -72,6 +76,7 @@ class CleanupServiceTest {
             assertTrue(await(protectedFixture.journal::isIdle));
             assertEquals(CleanupResult.PROTECTED, protectedFixture.service.process("world", protectedFixture.candidate(true)));
             assertEquals(0, protectedFixture.storage.clears);
+            assertTrue(protectedFixture.audit.stream().anyMatch(line -> line.contains("reason=player_activity")));
         } finally {
             protectedFixture.close();
         }
@@ -79,6 +84,7 @@ class CleanupServiceTest {
         Fixture pressured = new Fixture(settings(false), 40.0, true);
         try {
             assertEquals(CleanupResult.DEFERRED, pressured.service.process("world", pressured.candidate(true)));
+            assertTrue(pressured.audit.stream().anyMatch(line -> line.contains("reason=mspt_40.0")));
         } finally {
             pressured.close();
         }
@@ -87,13 +93,26 @@ class CleanupServiceTest {
         try {
             latched.latch.trip("planned");
             assertEquals(CleanupResult.LATCHED, latched.service.process("world", latched.candidate(true)));
+            assertTrue(latched.audit.stream().anyMatch(line -> line.contains("reason=safety_latch")));
         } finally {
             latched.close();
         }
     }
 
+    @Test
+    void nearbyOrOtherwiseUnsafeEnvironmentDefersWithAuditReason() throws Exception {
+        Fixture fixture = new Fixture(settings(false), 20.0, false);
+        try {
+            assertEquals(CleanupResult.DEFERRED, fixture.service.process("world", fixture.candidate(true)));
+            assertEquals(0, fixture.storage.clears);
+            assertTrue(fixture.audit.stream().anyMatch(line -> line.contains("reason=environment_not_safe")));
+        } finally {
+            fixture.close();
+        }
+    }
+
     private static CleanupSettings settings(boolean dryRun) {
-        return new CleanupSettings(true, dryRun, 30, 1200, 128, 1, 8, 35.0, true, true);
+        return new CleanupSettings(true, dryRun, 30, 1200, 128, 1, 8, 35.0, true, true, true);
     }
 
     private static boolean await(Check check) throws InterruptedException {
@@ -118,6 +137,7 @@ class CleanupServiceTest {
         private final MutationJournal journal = new MutationJournal(repository, latch, 128, 16, ignored -> { });
         private final FrontierTrackingService tracking;
         private final RecordingStorage storage = new RecordingStorage();
+        private final List<String> audit = new ArrayList<>();
         private final CleanupService service;
 
         private Fixture(CleanupSettings settings, double mspt, boolean safe) {
@@ -135,7 +155,7 @@ class CleanupServiceTest {
                     return safe;
                 }
             };
-            service = new CleanupService(settings, tracking, journal, latch, environment, storage, clock);
+            service = new CleanupService(settings, tracking, journal, latch, environment, storage, clock, audit::add);
         }
 
         private CleanupCandidate candidate(boolean reserved) {

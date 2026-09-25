@@ -1,6 +1,10 @@
-# Production Enthusia will normally use 100000 for the pregenerated overworld.
-# Set a world's core-radius-blocks to 0 on a disposable test world to make
-# every newly generated chunk managed by Frontier.
+# EnthusiaFrontier four-day server test profile.
+# Copy this file to plugins/EnthusiaFrontier/config.yml on the disposable test server.
+#
+# Keep 100000 when testing against an Enthusia world/copy so the pregenerated core
+# remains permanently outside Frontier cleanup. Set core-radius-blocks to 0 ONLY
+# when the entire test world is disposable and every newly generated chunk should
+# be managed by Frontier.
 worlds:
   world:
     enabled: true
@@ -13,14 +17,11 @@ worlds:
     core-radius-blocks: 100000
 
 tracking:
-  # Activity permanently protects the touched chunk and this many neighboring chunks.
   protection-radius-chunks: 2
   mutation-queue-capacity: 65536
   mutation-batch-size: 512
 
 throttle:
-  # If true, startup fails if this Paper/Leaf build cannot expose the expected
-  # runtime per-player chunk-generation controls.
   require-supported-adapter: true
   sample-period-ticks: 20
   recovery-hysteresis-mspt: 2.0
@@ -43,20 +44,19 @@ throttle:
       max-concurrent-generations: 1
 
 cleanup:
-  # Cleanup is implemented but intentionally opt-in. Enable dry-run first on a
-  # production copy and inspect /frontier status before enabling destructive mode.
-  enabled: false
-  dry-run: true
-  untouched-retention-days: 30
+  # This profile is intentionally destructive. Do not copy these cleanup values
+  # to production until the four-day test has been reviewed.
+  enabled: true
+  dry-run: false
+  # A temporary frontier chunk becomes eligible after 24 hours. Scanning every
+  # minute means eligible chunks are normally picked up shortly after that point,
+  # rather than waiting for one fixed daily purge.
+  untouched-retention-days: 1
   scan-period-ticks: 1200
   candidate-batch-size: 128
   max-chunks-per-tick: 1
   min-player-distance-chunks: 8
   max-mspt: 35.0
-  # Detailed candidate/reclaim decisions. Leave off in normal production unless
-  # diagnosing cleanup because active exploration can produce substantial logs.
-  audit-log: false
+  audit-log: true
   physical-reclaim: true
-  # If destructive cleanup is enabled, refuse startup unless this exact Leaf/Paper
-  # build exposes the validated Moonrise storage adapter.
   require-supported-adapter: true
