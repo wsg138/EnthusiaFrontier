@@ -202,7 +202,8 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 safetyLatch,
                 new BukkitCleanupEnvironmentAdapter(getServer()),
                 storage,
-                Clock.systemUTC());
+                Clock.systemUTC(),
+                settings.cleanup().auditLog() ? getLogger()::info : ignored -> { });
         cleanupCoordinator = new BukkitCleanupCoordinator(
                 this,
                 settings.cleanup(),
@@ -294,6 +295,8 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
             }
         }
         lines.add("§7cleanup: §f" + cleanupStatus() + " §7storage adapter: §f" + cleanupAdapterMode);
+        lines.add("§7cleanup policy: retention=§f" + settings.cleanup().untouchedRetentionDays()
+                + "d §7audit=§f" + (settings.cleanup().auditLog() ? "on" : "off"));
         return List.copyOf(lines);
     }
 
