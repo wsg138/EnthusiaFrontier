@@ -9,7 +9,9 @@ rm -rf "$WORK"
 mkdir -p "$WORK" "$OUT" "$OUT/EnthusiaTempChallenges" "$OUT/EnthusiaAdvancements/trees" "$OUT/EnthusiaTags"
 
 echo '== EnthusiaTempChallenges: tests + package =='
-mvn -B --no-transfer-progress -f "$ROOT/server-src/EnthusiaTempChallenges/pom.xml" clean verify package
+# verify already runs package/shade; adding a second explicit package goal re-shades
+# sqlite-jdbc into the just-shaded artifact and creates duplicate class entries.
+mvn -B --no-transfer-progress -f "$ROOT/server-src/EnthusiaTempChallenges/pom.xml" clean verify
 cp "$ROOT/server-src/EnthusiaTempChallenges/target/EnthusiaTempChallenges-0.2.0-frontier.1.jar" "$OUT/EnthusiaTempChallenges-0.2.0-frontier.1.jar"
 cp "$ROOT/server-src/EnthusiaTempChallenges/src/main/resources/config.yml" "$OUT/EnthusiaTempChallenges/config.yml"
 
