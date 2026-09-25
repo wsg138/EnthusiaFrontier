@@ -15,20 +15,43 @@ function Check-Hash([string]$Relative, [string]$Expected) {
     if ($actual -ne $Expected.ToLowerInvariant()) { throw "Hash mismatch: $Relative`nExpected $Expected`nActual   $actual" }
 }
 
-Require-File 'server.properties' | Out-Null
-Require-File 'config\paper-global.yml' | Out-Null
-Require-File 'config\paper-world-defaults.yml' | Out-Null
-Require-File 'config\leaf-global.yml' | Out-Null
-Require-File 'world\datapacks\enthusia-frontier-test\pack.mcmeta' | Out-Null
+foreach ($relative in @(
+    'eula.txt',
+    'server.properties',
+    'bukkit.yml',
+    'spigot.yml',
+    'purpur.yml',
+    'config\paper-global.yml',
+    'config\paper-world-defaults.yml',
+    'config\leaf-global.yml',
+    'config\gale-global.yml',
+    'config\gale-world-defaults.yml',
+    'plugins\PlaceholderAPI\config.yml',
+    'world\datapacks\enthusia-frontier-test\pack.mcmeta',
+    'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\load.mcfunction'
+)) { Require-File $relative | Out-Null }
 
 $leaf = [System.IO.File]::ReadAllText((Join-Path $Root 'config\leaf-global.yml'))
 if ($leaf -notmatch '(?s)secure-seed:\s*\r?\n\s*enabled:\s*true') { throw 'Leaf Secure Seed is not enabled.' }
+
+$properties = [System.IO.File]::ReadAllText((Join-Path $Root 'server.properties'))
+if ($properties -notmatch '(?m)^online-mode=false\s*$') { throw 'Backend must remain offline-mode behind Velocity modern forwarding.' }
+if ($properties -notmatch '(?m)^feature-level-seed=\s*$') {
+    Write-Warning 'feature-level-seed is populated or missing. Keep the live value private and verify this was intentional.'
+}
+
+$borderFunction = [System.IO.File]::ReadAllText((Join-Path $Root 'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\load.mcfunction'))
+foreach ($width in @('5000','2500','1000')) {
+    if ($borderFunction -notmatch ('worldborder set ' + $width + '(\s|$)')) { throw "Border datapack is missing width $width." }
+}
 
 foreach ($relative in @('config\paper-global.yml','plugins\LuckPerms\config.yml','plugins\Nexo\settings.yml')) {
     $text = [System.IO.File]::ReadAllText((Join-Path $Root $relative))
     if ($text -match 'REPLACE_WITH|<REDACTED>') { throw "Deployment placeholder remains in $relative" }
 }
 Require-File 'plugins\floodgate\key.pem' | Out-Null
+
+Check-Hash 'leaf-1.21.11-179.jar' '5da79782215c1a25edcd7c73b3523b7ecb7f4b86dc8a5846a176ed69bc2cd020'
 
 $known = @{
     'plugins\EnthusiaFrontier-0.1.1.jar'='74b90cafbd96cdbd9a51d07bc897b223161eab87bb7014416d662250442aeefa'
@@ -55,3 +78,5 @@ if (-not (Get-ChildItem -LiteralPath $plugins -Filter 'EnthusiaAdvancements*.jar
 if (-not (Get-ChildItem -LiteralPath $plugins -Filter 'UltimateAdvancementAPI*.jar' -File -ErrorAction SilentlyContinue)) { throw 'UltimateAdvancementAPI JAR is not present yet.' }
 
 Write-Host 'FRONTIER_TEST_RUNTIME_READY' -ForegroundColor Green
+Write-Host 'Runtime files, fixed binary hashes, Secure Seed config, borders and challenge dependencies are present.'
+Write-Host 'Still perform FIRST-BOOT-CHECKLIST.md live checks before admitting players.'
