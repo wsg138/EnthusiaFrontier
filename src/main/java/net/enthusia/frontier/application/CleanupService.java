@@ -2,6 +2,7 @@ package net.enthusia.frontier.application;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.function.Consumer;
 import net.enthusia.frontier.config.CleanupSettings;
@@ -113,7 +114,7 @@ public final class CleanupService {
     }
 
     private void auditRegion(String worldName, RegionKey region, RegionReclaimResult outcome, String reason) {
-        auditSink.accept("FRONTIER_CLEANUP_AUDIT stage=region outcome=" + outcome.name().toLowerCase()
+        auditSink.accept("FRONTIER_CLEANUP_AUDIT stage=region outcome=" + outcome.name().toLowerCase(Locale.ROOT)
                 + " reason=" + reason
                 + " world=" + worldName
                 + " region=" + region.x() + "," + region.z());
