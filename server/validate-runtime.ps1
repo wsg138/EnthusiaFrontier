@@ -14,6 +14,17 @@ function Check-Hash([string]$Relative, [string]$Expected) {
     $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $Expected.ToLowerInvariant()) { throw "Hash mismatch: $Relative`nExpected $Expected`nActual   $actual" }
 }
+function Get-ChallengeArtifactHashes {
+    $hashFile = Require-File 'PLUGIN-SHA256SUMS.txt'
+    $result = @{}
+    foreach ($line in [System.IO.File]::ReadAllLines($hashFile)) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        if ($line -notmatch '^([0-9a-fA-F]{64})\s+(.+)$') { throw "Malformed challenge hash line: $line" }
+        $name = [System.IO.Path]::GetFileName($Matches[2].Trim())
+        $result[$name] = $Matches[1].ToLowerInvariant()
+    }
+    return $result
+}
 
 foreach ($relative in @(
     'eula.txt',
@@ -88,12 +99,20 @@ $known = @{
     'plugins\nexo-1.22.1.jar'='8771545bf1d29500641c29733a741f863eccbf7dbf43217691dee8de33d43bac'
     'plugins\PlaceholderAPI-2.12.3.jar'='fde03259f5af6938f3c33eeb4d814000a1adabf1d2304ce14970be81f609a437'
     'plugins\TAB-v5.5.0.jar'='829e7ec22bc41069d93b53479a8fe4a335a579c9c5b37a4cf140da176aea65f6'
-    'plugins\EnthusiaTempChallenges-0.2.0-frontier.1.jar'='93f82219518bd6550525dc29608f239066176d6a56cf718e3b246d5ee6b6401b'
-    'plugins\EnthusiaAdvancements-1.0.0-frontier.jar'='9733423a2f0fa0bbaa15f7accca8390007e88f50affaff97aa6d0f24f18a1eae'
-    'plugins\UltimateAdvancementAPI-2.8.1.jar'='c6dfff5238eb119207c7a1e98c3246c5751da0c44504789c055a73e662d0b55b'
-    'plugins\EnthusiaTags.jar'='8aee3c250bdb66f9cb9641e3a5c2cbdb0336a96fca5afdc0488735bd8af13fe4'
 }
 foreach ($entry in $known.GetEnumerator()) { Check-Hash $entry.Key $entry.Value }
+
+$challengeArtifacts = Get-ChallengeArtifactHashes
+$requiredChallengeArtifacts = @(
+    'EnthusiaTempChallenges-0.2.0-frontier.1.jar',
+    'EnthusiaAdvancements-1.0.0-frontier.jar',
+    'UltimateAdvancementAPI-2.8.1.jar',
+    'EnthusiaTags.jar'
+)
+foreach ($name in $requiredChallengeArtifacts) {
+    if (-not $challengeArtifacts.ContainsKey($name)) { throw "Challenge hash manifest is missing $name" }
+    Check-Hash ("plugins\" + $name) $challengeArtifacts[$name]
+}
 
 $plugins = Join-Path $Root 'plugins'
 foreach ($pattern in @('Chunky*.jar','LumaGuilds*.jar','EnthusiaTeleport*.jar')) {
@@ -101,5 +120,5 @@ foreach ($pattern in @('Chunky*.jar','LumaGuilds*.jar','EnthusiaTeleport*.jar'))
 }
 
 Write-Host 'FRONTIER_TEST_RUNTIME_READY' -ForegroundColor Green
-Write-Host 'Runtime files, exact binary hashes, Secure Seed config, corrected borders, no-Elytra policy and challenge runtime all validate.'
+Write-Host 'Runtime files, workflow-pinned binary hashes, Secure Seed config, corrected borders, no-Elytra policy and challenge runtime all validate.'
 Write-Host 'Still perform FIRST-BOOT-CHECKLIST.md live checks before admitting players.'
