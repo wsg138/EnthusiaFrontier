@@ -21,21 +21,24 @@ execute in minecraft:the_end run worldborder get
 locate structure minecraft:stronghold
 ```
 
-Expected border widths:
+Expected border widths (`/worldborder get` reports full width):
 
-- Overworld: `5000`
-- Nether: `2500`
-- End: `1000`
+- Overworld: `10000` → coordinates `-5000..+5000`
+- Nether: `5000` → coordinates `-2500..+2500`
+- End: `5000` → coordinates `-2500..+2500`
 
-Leaf Secure Seed uses a separate private 1024-bit feature seed for structures and ores. The fixed `level-seed` therefore does **not** preselect the stronghold position. Before normal players join, the located stronghold must be inside X/Z `-2500..+2500` with enough margin to reach the structure normally. If it is outside the border, delete all three fresh world directories and regenerate once with a new secure feature seed; do not widen the 5k border.
+Leaf Secure Seed uses a separate private 1024-bit feature seed for structures and ores. The fixed `level-seed` therefore does **not** preselect the stronghold position. Before normal players join, the located stronghold must be inside X/Z `-5000..+5000` with enough margin to reach the structure normally. If it is outside the border, delete all three fresh world directories and regenerate once with a new secure feature seed; do not widen the ±5000 Overworld border.
 
 Keep the generated secure feature seed private. Do not commit it or publish `/seed` output.
 
-## End rule
+## End / Elytra rule
 
 - End must be accessible immediately; there is no scheduled End opening.
 - Verify the natural stronghold portal can be reached inside the Overworld border.
-- Verify the End border is 1000 blocks wide and outer End islands / End Cities cannot be reached normally.
+- Verify the End border is `5000` blocks wide / `-2500..+2500`.
+- Confirm the bundled `enthusia_test:tick` function is active.
+- Locate or spawn an Elytra item frame in a controlled admin test and confirm the Elytra is removed.
+- Drop/give an Elytra in a controlled admin test and confirm it is removed from item entities/player inventories.
 - Elytra server-first must remain locked by the challenge plugin.
 
 ## Proxy / Java / Bedrock
