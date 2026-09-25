@@ -1,10 +1,5 @@
 package org.enthusia.tempchallenges.paper;
 
-import net.luckperms.api.LuckPerms;
-import net.luckperms.api.LuckPermsProvider;
-import net.luckperms.api.model.user.User;
-import net.luckperms.api.node.Node;
-import net.luckperms.api.node.types.PermissionNode;
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
@@ -20,8 +15,6 @@ import org.enthusia.tempchallenges.domain.WinnerRecord;
 import org.enthusia.tempchallenges.persistence.ChallengeLedger;
 
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -30,6 +23,7 @@ public final class RewardCoordinator implements RewardSink {
     private final ChallengeLedger ledger;
     private final ChallengeRegistry registry;
     private final FloodgateIdentityResolver identities;
+    private final LuckPermsEntitlementGateway entitlements;
     private final String eventId;
     private final String advancementTree;
     private final DurableXpReward xpReward = new DurableXpReward();
@@ -40,6 +34,7 @@ public final class RewardCoordinator implements RewardSink {
         this.ledger = ledger;
         this.registry = registry;
         this.identities = identities;
+        this.entitlements = new LuckPermsEntitlementGateway(plugin);
         this.eventId = eventId;
         this.advancementTree = advancementTree;
     }
@@ -83,16 +78,7 @@ public final class RewardCoordinator implements RewardSink {
     }
 
     public boolean hasExplicitPortableEntitlement(UUID uuid, String permission) {
-        if (!Bukkit.getPluginManager().isPluginEnabled("LuckPerms")) return false;
-        try {
-            User user = LuckPermsProvider.get().getUserManager().getUser(uuid);
-            if (user == null) return false;
-            for (Node node : user.getNodes()) {
-                if (node instanceof PermissionNode p && p.getPermission().equalsIgnoreCase(permission)
-                        && p.getValue() && p.getContexts().isEmpty()) return true;
-            }
-        } catch (IllegalStateException ignored) { }
-        return false;
+        return entitlements.hasExplicit(uuid, permission);
     }
 
     private void ensureXp(ChallengeDefinition challenge, Player player) {
@@ -123,38 +109,18 @@ public final class RewardCoordinator implements RewardSink {
                 }
             });
             mark(challenge, "XP", "DELIVERED", null);
-        } catch (RuntimeException exception) {
-            mark(challenge, "XP", "PENDING", exception.getMessage());
         } catch (Exception exception) {
             mark(challenge, "XP", "PENDING", exception.getMessage());
         }
     }
 
     private void ensurePortable(ChallengeDefinition challenge, UUID uuid) {
-        if (!Bukkit.getPluginManager().isPluginEnabled("LuckPerms")) {
+        if (!entitlements.available()) {
             mark(challenge, "LUCKPERMS", "PENDING", "LuckPerms unavailable");
             return;
         }
-        try {
-            LuckPerms lp = LuckPermsProvider.get();
-            lp.getUserManager().loadUser(uuid).thenAccept(user -> {
-                try {
-                    PermissionNode node = PermissionNode.builder(challenge.permission()).value(true).build();
-                    user.data().add(node);
-                    lp.getUserManager().saveUser(user).whenComplete((ignored, error) -> {
-                        if (error == null) mark(challenge, "LUCKPERMS", "DELIVERED", null);
-                        else mark(challenge, "LUCKPERMS", "PENDING", error.getMessage());
-                    });
-                } catch (RuntimeException ex) {
-                    mark(challenge, "LUCKPERMS", "PENDING", ex.getMessage());
-                }
-            }).exceptionally(error -> {
-                mark(challenge, "LUCKPERMS", "PENDING", error.getMessage());
-                return null;
-            });
-        } catch (RuntimeException ex) {
-            mark(challenge, "LUCKPERMS", "PENDING", ex.getMessage());
-        }
+        entitlements.ensure(uuid, challenge.permission(), (success, error) ->
+                mark(challenge, "LUCKPERMS", success ? "DELIVERED" : "PENDING", error));
     }
 
     private void ensurePresentation(ChallengeDefinition challenge, Player player) {
@@ -179,21 +145,10 @@ public final class RewardCoordinator implements RewardSink {
     }
 
     public void revokePortable(UUID uuid, ChallengeDefinition challenge) {
-        if (Bukkit.getPluginManager().isPluginEnabled("LuckPerms")) {
-            try {
-                LuckPerms lp = LuckPermsProvider.get();
-                lp.getUserManager().loadUser(uuid).thenAccept(user -> {
-                    List<Node> remove = new ArrayList<>();
-                    for (Node node : user.getNodes()) {
-                        if (node instanceof PermissionNode p && p.getPermission().equalsIgnoreCase(challenge.permission())
-                                && p.getContexts().isEmpty()) remove.add(node);
-                    }
-                    remove.forEach(user.data()::remove);
-                    lp.getUserManager().saveUser(user);
-                });
-            } catch (RuntimeException ex) {
-                plugin.getLogger().warning("Could not revoke LuckPerms entitlement: " + ex.getMessage());
-            }
+        if (entitlements.available()) {
+            entitlements.revoke(uuid, challenge.permission(), (success, error) -> {
+                if (!success) plugin.getLogger().warning("Could not revoke LuckPerms entitlement: " + error);
+            });
         }
         Player onlinePlayer = findOnlineByCanonical(uuid);
         if (onlinePlayer != null) {

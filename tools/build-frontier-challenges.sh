@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$ROOT/server/plugins"
 WORK="${RUNNER_TEMP:-/tmp}/frontier-challenges-build"
-SOURCE_SHA="${GITHUB_SHA:-local}"
 rm -rf "$WORK"
 mkdir -p "$WORK" "$OUT" "$OUT/EnthusiaTempChallenges" "$OUT/EnthusiaAdvancements/trees" "$OUT/EnthusiaTags"
 
@@ -13,45 +12,34 @@ normalize_jar() {
   python3 - "$jar_path" <<'PY'
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
-import os
-import sys
-
-path = Path(sys.argv[1])
-tmp = path.with_suffix(path.suffix + '.normalized')
-fixed_time = (1980, 1, 1, 0, 0, 0)
-
-with ZipFile(path, 'r') as source, ZipFile(tmp, 'w', allowZip64=True) as target:
-    # Sort by path so source-tool insertion order cannot affect the deployable bytes.
-    # Duplicate names retain their original relative order through the header offset tie-breaker.
-    entries = sorted(source.infolist(), key=lambda info: (info.filename, info.header_offset))
-    for info in entries:
-        data = source.read(info)
-        normalized = ZipInfo(info.filename, fixed_time)
-        normalized.create_system = info.create_system
-        normalized.create_version = info.create_version
-        normalized.extract_version = info.extract_version
-        normalized.external_attr = info.external_attr
-        normalized.internal_attr = info.internal_attr
-        normalized.comment = info.comment
-        # Strip timestamp/platform extra fields. ZIP64 metadata is regenerated if needed.
-        normalized.extra = b''
-        if info.is_dir():
-            normalized.compress_type = ZIP_STORED
-            target.writestr(normalized, b'')
-        else:
-            normalized.compress_type = ZIP_DEFLATED
-            target.writestr(normalized, data, compress_type=ZIP_DEFLATED, compresslevel=9)
-
-os.replace(tmp, path)
+import os, sys
+path=Path(sys.argv[1]); tmp=path.with_suffix(path.suffix+'.normalized'); fixed=(1980,1,1,0,0,0)
+with ZipFile(path,'r') as source, ZipFile(tmp,'w',allowZip64=True) as target:
+    for info in sorted(source.infolist(), key=lambda i:(i.filename,i.header_offset)):
+        data=source.read(info); out=ZipInfo(info.filename,fixed)
+        out.create_system=info.create_system; out.create_version=info.create_version; out.extract_version=info.extract_version
+        out.external_attr=info.external_attr; out.internal_attr=info.internal_attr; out.comment=info.comment; out.extra=b''
+        if info.is_dir(): out.compress_type=ZIP_STORED; target.writestr(out,b'')
+        else: out.compress_type=ZIP_DEFLATED; target.writestr(out,data,compress_type=ZIP_DEFLATED,compresslevel=9)
+os.replace(tmp,path)
 PY
 }
 
 echo '== EnthusiaTempChallenges: tests + package =='
-# verify already runs package/shade; adding a second explicit package goal re-shades
-# sqlite-jdbc into the just-shaded artifact and creates duplicate class entries.
 mvn -B --no-transfer-progress -f "$ROOT/server-src/EnthusiaTempChallenges/pom.xml" clean verify
 cp "$ROOT/server-src/EnthusiaTempChallenges/target/EnthusiaTempChallenges-0.2.0-frontier.1.jar" "$OUT/EnthusiaTempChallenges-0.2.0-frontier.1.jar"
 cp "$ROOT/server-src/EnthusiaTempChallenges/src/main/resources/config.yml" "$OUT/EnthusiaTempChallenges/config.yml"
+
+echo '== UltimateAdvancementAPI: pinned 2.8.1 plugin source =='
+git clone --quiet https://github.com/frengor/UltimateAdvancementAPI.git "$WORK/uaa"
+git -C "$WORK/uaa" checkout --quiet 67d9576ae5e4ec55701ac653194bb77c5f1e708c
+( cd "$WORK/uaa" && mvn -B --no-transfer-progress -DskipTests -f Plugin/pom.xml package )
+UAA_JAR="$WORK/uaa/Plugin/target/UltimateAdvancementAPI-Plugin-2.8.1-Mojang-Mapped-Legacy.jar"
+if [[ ! -s "$UAA_JAR" ]]; then
+  echo "Pinned UltimateAdvancementAPI plugin JAR was not produced: $UAA_JAR" >&2
+  exit 1
+fi
+cp "$UAA_JAR" "$OUT/UltimateAdvancementAPI-2.8.1.jar"
 
 echo '== EnthusiaAdvancements: pinned Badgers source =='
 git clone --quiet https://github.com/BadgersMC/EnthusiaAdvancements.git "$WORK/advancements"
@@ -59,9 +47,7 @@ git -C "$WORK/advancements" checkout --quiet 42e901473234f5b69c07d5416565d80addb
 python3 - "$WORK/advancements" <<'PY'
 from pathlib import Path
 import sys
-root=Path(sys.argv[1])
-build=root/'build.gradle.kts'
-text=build.read_text()
+root=Path(sys.argv[1]); build=root/'build.gradle.kts'; text=build.read_text()
 text=text.replace('com.frengor:ultimateadvancementapi:2.8.0','com.frengor:ultimateadvancementapi:2.8.1')
 text += r'''
 
@@ -84,9 +70,7 @@ sourceSets {
 }
 '''
 build.write_text(text)
-cmd=root/'src/main/kotlin/io/github/badgersmc/advancements/commands/AdvancementCommand.kt'
-text=cmd.read_text()
-needle='    @Subcommand("list")\n'
+cmd=root/'src/main/kotlin/io/github/badgersmc/advancements/commands/AdvancementCommand.kt'; text=cmd.read_text(); needle='    @Subcommand("list")\n'
 revoke=r'''    @Subcommand("revoke")
     @Permission("advancements.admin")
     fun revoke(
@@ -110,8 +94,7 @@ revoke=r'''    @Subcommand("revoke")
     }
 
 '''
-if needle not in text:
-    raise SystemExit('Could not patch AdvancementCommand revoke subcommand')
+if needle not in text: raise SystemExit('Could not patch AdvancementCommand revoke subcommand')
 cmd.write_text(text.replace(needle,revoke+needle,1))
 PY
 chmod +x "$WORK/advancements/gradlew"
@@ -119,11 +102,6 @@ chmod +x "$WORK/advancements/gradlew"
 ADV_JAR="$(find "$WORK/advancements/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*javadoc*' -printf '%s %p\n' | sort -nr | head -1 | cut -d' ' -f2-)"
 test -n "$ADV_JAR"
 cp "$ADV_JAR" "$OUT/EnthusiaAdvancements-1.0.0-frontier.jar"
-
-echo '== UltimateAdvancementAPI 2.8.1 =='
-curl --fail --location --retry 3 --silent --show-error \
-  'https://nexus.frengor.com/repository/public/com/frengor/ultimateadvancementapi/2.8.1/ultimateadvancementapi-2.8.1.jar' \
-  -o "$OUT/UltimateAdvancementAPI-2.8.1.jar"
 
 echo '== EnthusiaTags: pinned Java-21/Paper-1.21.11 source =='
 git clone --quiet https://github.com/wsg138/EnthusiaTags.git "$WORK/tags"
@@ -137,8 +115,7 @@ cp "$WORK/tags/src/main/resources/config.yml" "$OUT/EnthusiaTags/config.yml"
 python3 - "$OUT/EnthusiaTags/config.yml" <<'PY'
 from pathlib import Path
 import sys
-p=Path(sys.argv[1]); text=p.read_text()
-marker='tags:\n'
+p=Path(sys.argv[1]); text=p.read_text(); marker='tags:\n'
 if marker not in text: raise SystemExit('EnthusiaTags config has no top-level tags mapping')
 block='''  # FRONTIER-FIRST-TAGS-BEGIN
   frontier_first_diamonds: { display-name: "<bold><#5FD3FF>Diamond Pioneer", tag-text: "<bold><#5FD3FF>Diamond Pioneer", icon: "DIAMOND", description: ["&7First to obtain Diamonds on Frontier Test."] }
@@ -169,8 +146,22 @@ PY
 
 echo '== Normalize built JARs for byte-reproducible deployment =='
 normalize_jar "$OUT/EnthusiaTempChallenges-0.2.0-frontier.1.jar"
+normalize_jar "$OUT/UltimateAdvancementAPI-2.8.1.jar"
 normalize_jar "$OUT/EnthusiaAdvancements-1.0.0-frontier.jar"
 normalize_jar "$OUT/EnthusiaTags.jar"
+
+echo '== Validate plugin descriptors before publishing =='
+python3 - "$OUT" <<'PY'
+from pathlib import Path
+from zipfile import ZipFile
+import sys
+root=Path(sys.argv[1])
+for name in ['EnthusiaTempChallenges-0.2.0-frontier.1.jar','UltimateAdvancementAPI-2.8.1.jar','EnthusiaAdvancements-1.0.0-frontier.jar','EnthusiaTags.jar']:
+    with ZipFile(root/name) as jar:
+        names=set(jar.namelist())
+        if 'plugin.yml' not in names and 'paper-plugin.yml' not in names:
+            raise SystemExit(f'{name} is not a server plugin JAR: no plugin descriptor')
+PY
 
 echo '== Hash deployable artifacts =='
 cd "$ROOT"

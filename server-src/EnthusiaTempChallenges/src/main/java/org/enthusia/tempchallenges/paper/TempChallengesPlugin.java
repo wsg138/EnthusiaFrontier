@@ -70,8 +70,10 @@ public final class TempChallengesPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(new org.bukkit.event.Listener() {
                 @org.bukkit.event.EventHandler
                 public void join(org.bukkit.event.player.PlayerJoinEvent event) {
-                    getServer().getScheduler().runTask(TempChallengesPlugin.this,
-                            () -> rewards.reconcile(event.getPlayer()));
+                    // A short delay lets optional network plugins finish their own join-time
+                    // user loading before portable-entitlement reconciliation is attempted.
+                    getServer().getScheduler().runTaskLater(TempChallengesPlugin.this,
+                            () -> rewards.reconcile(event.getPlayer()), 20L);
                 }
             }, this);
 
