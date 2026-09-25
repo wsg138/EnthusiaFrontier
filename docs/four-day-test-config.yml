@@ -1,10 +1,10 @@
 # EnthusiaFrontier four-day server test profile.
 # Copy this file to plugins/EnthusiaFrontier/config.yml on the disposable test server.
 #
-# The temporary destructive test server uses a 5,000-block world border. Because
-# that entire world is disposable, core-radius-blocks is 0 so every newly generated
-# overworld chunk inside the test border is managed by Frontier. Production keeps
-# the normal 100000-block permanent overworld core.
+# The temporary destructive test server uses an Overworld border of -5000..+5000
+# (10,000 blocks wide). Because that entire world is disposable, core-radius-blocks
+# is 0 so every newly generated overworld chunk inside the test border is managed
+# by Frontier. Production keeps the normal 100000-block permanent overworld core.
 worlds:
   world:
     enabled: true
