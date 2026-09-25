@@ -1,0 +1,62 @@
+# EnthusiaFrontier four-day server test profile.
+# Copy this file to plugins/EnthusiaFrontier/config.yml on the disposable test server.
+#
+# Keep 100000 when testing against an Enthusia world/copy so the pregenerated core
+# remains permanently outside Frontier cleanup. Set core-radius-blocks to 0 ONLY
+# when the entire test world is disposable and every newly generated chunk should
+# be managed by Frontier.
+worlds:
+  world:
+    enabled: true
+    core-radius-blocks: 100000
+  world_nether:
+    enabled: false
+    core-radius-blocks: 100000
+  world_the_end:
+    enabled: false
+    core-radius-blocks: 100000
+
+tracking:
+  protection-radius-chunks: 2
+  mutation-queue-capacity: 65536
+  mutation-batch-size: 512
+
+throttle:
+  require-supported-adapter: true
+  sample-period-ticks: 20
+  recovery-hysteresis-mspt: 2.0
+  levels:
+    - name: healthy
+      enter-mspt: 0.0
+      max-generation-rate: 32.0
+      max-concurrent-generations: 4
+    - name: elevated
+      enter-mspt: 25.0
+      max-generation-rate: 16.0
+      max-concurrent-generations: 3
+    - name: pressured
+      enter-mspt: 35.0
+      max-generation-rate: 8.0
+      max-concurrent-generations: 2
+    - name: critical
+      enter-mspt: 45.0
+      max-generation-rate: 2.0
+      max-concurrent-generations: 1
+
+cleanup:
+  # This profile is intentionally destructive. Do not copy these cleanup values
+  # to production until the four-day test has been reviewed.
+  enabled: true
+  dry-run: false
+  # A temporary frontier chunk becomes eligible after 24 hours. Scanning every
+  # minute means eligible chunks are normally picked up shortly after that point,
+  # rather than waiting for one fixed daily purge.
+  untouched-retention-days: 1
+  scan-period-ticks: 1200
+  candidate-batch-size: 128
+  max-chunks-per-tick: 1
+  min-player-distance-chunks: 8
+  max-mspt: 35.0
+  audit-log: true
+  physical-reclaim: true
+  require-supported-adapter: true
