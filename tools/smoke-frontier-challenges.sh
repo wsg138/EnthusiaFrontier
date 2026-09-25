@@ -120,8 +120,8 @@ if kill -0 "$SERVER_PID" 2>/dev/null; then
 fi
 wait "$SERVER_PID"
 
-if grep -q 'Could not enable durable Frontier Firsts' "$SMOKE/server.log"; then
-  echo 'EnthusiaTempChallenges reported an enable failure.' >&2
+if grep -qE 'Could not enable durable Frontier Firsts|Error occurred while enabling (UltimateAdvancementAPI|EnthusiaAdvancements|EnthusiaTags|EnthusiaTempChallenges)|Unknown/missing dependency.*(UltimateAdvancementAPI|EnthusiaAdvancements|EnthusiaTags|EnthusiaTempChallenges)|Could not load plugin.*(UltimateAdvancementAPI|EnthusiaAdvancements|EnthusiaTags|EnthusiaTempChallenges)' "$SMOKE/server.log"; then
+  echo 'One or more Frontier challenge runtime plugins reported an enable/dependency failure.' >&2
   exit 1
 fi
 
@@ -137,6 +137,7 @@ require_log() {
 require_log 'EnthusiaTempChallenges enabled: event=frontier_2026_test, state=ACTIVE' 'challenge plugin ACTIVE startup confirmation'
 require_log 'Frontier Firsts' 'frontier_firsts presentation/status output'
 require_log 'EnthusiaTempChallenges' 'EnthusiaTempChallenges plugin presence'
+require_log 'UltimateAdvancementAPI' 'UltimateAdvancementAPI plugin presence'
 require_log 'EnthusiaAdvancements' 'EnthusiaAdvancements plugin presence'
 require_log 'EnthusiaTags' 'EnthusiaTags plugin presence'
 test -s "$SMOKE/plugins/EnthusiaTempChallenges/challenge-ledger.sqlite"
@@ -157,4 +158,4 @@ with sqlite3.connect(path) as connection:
 PY
 
 trap - EXIT
-echo 'Leaf 1.21.11 runtime smoke passed: challenge plugin enabled, status command ran, and empty durable ledger schema initialized.'
+echo 'Leaf 1.21.11 runtime smoke passed: all Frontier challenge plugins loaded, status command ran, and empty durable ledger schema initialized.'

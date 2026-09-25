@@ -21,7 +21,7 @@ concurrency:
 jobs:
   build-test-package:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -118,6 +118,7 @@ jobs:
             sqlite_jdbc: 3.53.4.0
             luckperms_integration: optional-reflective
             floodgate_integration: optional-reflective
+            spigot_buildtools_build: 201
             badgers_advancements_source: 42e901473234f5b69c07d5416565d80addbb197d
             ultimate_advancement_api: 2.8.1
             ultimate_advancement_api_source: 67d9576ae5e4ec55701ac653194bb77c5f1e708c

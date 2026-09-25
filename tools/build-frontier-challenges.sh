@@ -30,6 +30,26 @@ mvn -B --no-transfer-progress -f "$ROOT/server-src/EnthusiaTempChallenges/pom.xm
 cp "$ROOT/server-src/EnthusiaTempChallenges/target/EnthusiaTempChallenges-0.2.0-frontier.1.jar" "$OUT/EnthusiaTempChallenges-0.2.0-frontier.1.jar"
 cp "$ROOT/server-src/EnthusiaTempChallenges/src/main/resources/config.yml" "$OUT/EnthusiaTempChallenges/config.yml"
 
+echo '== Spigot 1.21.11: provision remapped-mojang NMS compile dependency =='
+BUILDTOOLS_BUILD=201
+BUILDTOOLS_URL="https://hub.spigotmc.org/jenkins/job/BuildTools/${BUILDTOOLS_BUILD}/artifact/target/BuildTools.jar"
+curl --fail --location --retry 3 --silent --show-error "$BUILDTOOLS_URL" -o "$WORK/BuildTools.jar"
+mkdir -p "$WORK/spigot-build" "$WORK/spigot-output"
+git config --global --unset-all core.autocrlf || true
+(
+  cd "$WORK/spigot-build"
+  MAVEN_OPTS='-Xmx2G' java -Xmx2G -jar "$WORK/BuildTools.jar" \
+    --rev 1.21.11 \
+    --remapped \
+    --output-dir "$WORK/spigot-output"
+)
+SPIGOT_MOJANG="$(find "$HOME/.m2/repository/org/spigotmc/spigot/1.21.11-R0.1-SNAPSHOT" -maxdepth 1 -type f -name '*remapped-mojang.jar' -print -quit 2>/dev/null || true)"
+if [[ -z "$SPIGOT_MOJANG" || ! -s "$SPIGOT_MOJANG" ]]; then
+  echo 'BuildTools did not install org.spigotmc:spigot:1.21.11-R0.1-SNAPSHOT:remapped-mojang into the local Maven repository.' >&2
+  exit 1
+fi
+echo "Provisioned $(basename "$SPIGOT_MOJANG") via pinned BuildTools #${BUILDTOOLS_BUILD}."
+
 echo '== UltimateAdvancementAPI: pinned 2.8.1 plugin source, 1.21.11 adapter only =='
 git clone --quiet https://github.com/frengor/UltimateAdvancementAPI.git "$WORK/uaa"
 git -C "$WORK/uaa" checkout --quiet 67d9576ae5e4ec55701ac653194bb77c5f1e708c
