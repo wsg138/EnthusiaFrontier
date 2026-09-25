@@ -69,14 +69,21 @@ SERVER_PID=$!
 popd >/dev/null
 
 cleanup() {
+  rc=$?
   if kill -0 "$SERVER_PID" 2>/dev/null; then
     printf 'stop\n' >&3 || true
     for _ in $(seq 1 20); do
-      kill -0 "$SERVER_PID" 2>/dev/null || return 0
+      kill -0 "$SERVER_PID" 2>/dev/null || break
       sleep 1
     done
     kill "$SERVER_PID" 2>/dev/null || true
   fi
+  if (( rc != 0 )); then
+    echo '--- Frontier challenge Leaf smoke failed; server.log follows ---' >&2
+    tail -n 300 "$SMOKE/server.log" >&2 || true
+    echo '--- end server.log ---' >&2
+  fi
+  return "$rc"
 }
 trap cleanup EXIT
 
@@ -88,7 +95,6 @@ for _ in $(seq 1 180); do
   fi
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     echo 'Leaf exited before reaching Done.' >&2
-    tail -n 250 "$SMOKE/server.log" >&2
     exit 1
   fi
   sleep 1
@@ -96,7 +102,6 @@ done
 
 if [[ "$started" != true ]]; then
   echo 'Leaf did not reach Done within 180 seconds.' >&2
-  tail -n 250 "$SMOKE/server.log" >&2
   exit 1
 fi
 
@@ -111,23 +116,29 @@ for _ in $(seq 1 45); do
 done
 if kill -0 "$SERVER_PID" 2>/dev/null; then
   echo 'Leaf did not stop cleanly.' >&2
-  tail -n 250 "$SMOKE/server.log" >&2
   exit 1
 fi
 wait "$SERVER_PID"
-trap - EXIT
 
 if grep -q 'Could not enable durable Frontier Firsts' "$SMOKE/server.log"; then
   echo 'EnthusiaTempChallenges reported an enable failure.' >&2
-  tail -n 250 "$SMOKE/server.log" >&2
   exit 1
 fi
 
-grep -q 'EnthusiaTempChallenges enabled: event=frontier_2026_test, state=ACTIVE' "$SMOKE/server.log"
-grep -q 'Frontier Firsts' "$SMOKE/server.log"
-grep -q 'EnthusiaTempChallenges' "$SMOKE/server.log"
-grep -q 'EnthusiaAdvancements' "$SMOKE/server.log"
-grep -q 'EnthusiaTags' "$SMOKE/server.log"
+require_log() {
+  local pattern="$1"
+  local description="$2"
+  if ! grep -q "$pattern" "$SMOKE/server.log"; then
+    echo "Missing expected Leaf log evidence: $description" >&2
+    exit 1
+  fi
+}
+
+require_log 'EnthusiaTempChallenges enabled: event=frontier_2026_test, state=ACTIVE' 'challenge plugin ACTIVE startup confirmation'
+require_log 'Frontier Firsts' 'frontier_firsts presentation/status output'
+require_log 'EnthusiaTempChallenges' 'EnthusiaTempChallenges plugin presence'
+require_log 'EnthusiaAdvancements' 'EnthusiaAdvancements plugin presence'
+require_log 'EnthusiaTags' 'EnthusiaTags plugin presence'
 test -s "$SMOKE/plugins/EnthusiaTempChallenges/challenge-ledger.sqlite"
 
 python3 - "$SMOKE/plugins/EnthusiaTempChallenges/challenge-ledger.sqlite" <<'PY'
@@ -145,4 +156,5 @@ with sqlite3.connect(path) as connection:
     assert connection.execute('SELECT COUNT(*) FROM challenge_winner').fetchone()[0] == 0
 PY
 
+trap - EXIT
 echo 'Leaf 1.21.11 runtime smoke passed: challenge plugin enabled, status command ran, and empty durable ledger schema initialized.'
