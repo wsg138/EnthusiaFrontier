@@ -13,16 +13,17 @@ This directory is intentionally laid out like the root of a normal Leaf/Paper Mi
 
 ## World
 
-- Overworld: **5000 x 5000**
-- Nether: **2500 x 2500**
-- End: **1000 x 1000** (main island only)
+- Overworld: **-5000..+5000** (**10,000 blocks wide**)
+- Nether: **-2500..+2500** (**5,000 blocks wide**)
+- End: **-2500..+2500** (**5,000 blocks wide**)
 - End enabled immediately
+- Elytras disabled by the bundled datapack policy, including natural End Ship item frames, dropped Elytras and player inventories
 - no pregeneration
 - fresh fixed terrain seed
 - private Leaf 1024-bit Secure Seed feature seed for ores/structures
 - Frontier cleanup: real deletion after 1 untouched day
 
-The ordinary `level-seed` controls terrain. With Leaf Secure Seed enabled, structures such as strongholds use Leaf's separate 1024-bit feature seed. Keep that live feature seed private. On the first clean boot, `/locate structure minecraft:stronghold` must return a reachable stronghold inside the ±2500 Overworld border before normal players are admitted. See `FIRST-BOOT-CHECKLIST.md`.
+The ordinary `level-seed` controls terrain. With Leaf Secure Seed enabled, structures such as strongholds use Leaf's separate 1024-bit feature seed. Keep that live feature seed private. On the first clean boot, `/locate structure minecraft:stronghold` must return a reachable stronghold inside the ±5000 Overworld border before normal players are admitted. See `FIRST-BOOT-CHECKLIST.md`.
 
 ## Normal server layout
 
@@ -41,7 +42,7 @@ The folder already contains the normal runtime/config structure:
 - `config/gale-global.yml`
 - `config/gale-world-defaults.yml`
 - `plugins/` configuration folders
-- `world/datapacks/` border bootstrap
+- `world/datapacks/` border + no-Elytra bootstrap
 - fresh ops/whitelist/ban files
 - startup and validation helpers
 
