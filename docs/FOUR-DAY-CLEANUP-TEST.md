@@ -6,7 +6,9 @@ This profile is for the temporary Enthusia test server. It intentionally perform
 
 Use `docs/four-day-test-config.yml` as `plugins/EnthusiaFrontier/config.yml`.
 
-The temporary server uses a **5,000-block world border**. Because the entire test world is disposable, this profile sets `core-radius-blocks: 0`, which makes every newly generated overworld chunk inside that border eligible for Frontier management. This is intentionally different from production, where the existing roughly 100,000-block pregenerated core remains permanent.
+The temporary server uses an Overworld border of **-5000..+5000** (**10,000 blocks wide**). Because the entire test world is disposable, this profile sets `core-radius-blocks: 0`, which makes every newly generated overworld chunk inside that border eligible for Frontier management. This is intentionally different from production, where the existing roughly 100,000-block pregenerated core remains permanent.
+
+The Nether and End runtime borders are both **-2500..+2500** (**5,000 blocks wide**). Frontier destructive cleanup remains intentionally limited to the Overworld for this test.
 
 The important cleanup settings are:
 
@@ -32,7 +34,7 @@ Audit entries begin with `FRONTIER_CLEANUP_AUDIT` and include the world, chunk o
 
 ## Day-one control cases
 
-Create several known areas inside the 5,000-block test border and record their coordinates:
+Create several known areas inside the Overworld ±5000 test border and record their coordinates:
 
 1. **Fly-through:** generate chunks and only travel through them. They should remain temporary and become eligible for cleanup after 24 hours.
 2. **Build:** place or break a block. The touched chunk and configured protection radius must survive cleanup.
