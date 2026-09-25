@@ -54,7 +54,7 @@ challenges:
     tag: frontier_first_netherite_armor
     advancement-node: first_netherite_armor
     xp: 750
-    signals: ['ARMOR_COMPLETE:NETHERITE', 'VANILLA_ADVANCEMENT:minecraft:nether/netherite_armor']
+    signals: ['ARMOR_COMPLETE:NETHERITE']
   first_stronghold:
     title: Stronghold Scout
     announcement: discover a Stronghold

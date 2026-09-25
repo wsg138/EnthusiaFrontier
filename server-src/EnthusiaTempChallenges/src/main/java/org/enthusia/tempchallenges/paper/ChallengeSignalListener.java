@@ -90,15 +90,16 @@ public final class ChallengeSignalListener implements Listener {
     public void pickup(EntityPickupItemEvent event) {
         if (!(event.getEntity() instanceof Player player)) return;
         ItemStack item = event.getItem().getItemStack();
-        if (isTestItem(item)) return;
+        if (invalidItem(item)) return;
         emitItem(player, item.getType(), "pickup:" + event.getItem().getUniqueId(), "item-entity pickup");
     }
 
     @EventHandler(ignoreCancelled = true)
     public void craft(CraftItemEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
-        ItemStack result = event.getRecipe().getResult();
-        if (isTestItem(result)) return;
+        ItemStack result = event.getCurrentItem();
+        if (result == null || result.getType().isAir()) result = event.getRecipe().getResult();
+        if (invalidItem(result)) return;
         emitItem(player, result.getType(), perTick(player, "craft", result.getType()), "craft result");
     }
 
@@ -106,7 +107,7 @@ public final class ChallengeSignalListener implements Listener {
     public void smith(SmithItemEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         ItemStack result = event.getCurrentItem();
-        if (result != null && !result.getType().isAir() && !isTestItem(result)) {
+        if (result != null && !result.getType().isAir() && !invalidItem(result)) {
             emitItem(player, result.getType(), perTick(player, "smith", result.getType()), "smithing result");
         }
         plugin.getServer().getScheduler().runTask(plugin, () -> checkNetheriteArmor(player));
@@ -124,7 +125,7 @@ public final class ChallengeSignalListener implements Listener {
                 action == InventoryAction.MOVE_TO_OTHER_INVENTORY || action == InventoryAction.HOTBAR_SWAP ||
                 action == InventoryAction.HOTBAR_MOVE_AND_READD)) return;
         ItemStack item = event.getCurrentItem();
-        if (item == null || item.getType().isAir() || isTestItem(item)) return;
+        if (item == null || item.getType().isAir() || invalidItem(item)) return;
         emitItem(player, item.getType(), perTick(player, "container:" + event.getRawSlot(), item.getType()),
                 "physical-container transfer");
     }
@@ -151,12 +152,13 @@ public final class ChallengeSignalListener implements Listener {
     }
 
     private void checkNetheriteArmor(Player player) {
-        ItemStack h = player.getInventory().getHelmet();
-        ItemStack c = player.getInventory().getChestplate();
-        ItemStack l = player.getInventory().getLeggings();
-        ItemStack b = player.getInventory().getBoots();
-        if (type(h) == Material.NETHERITE_HELMET && type(c) == Material.NETHERITE_CHESTPLATE &&
-                type(l) == Material.NETHERITE_LEGGINGS && type(b) == Material.NETHERITE_BOOTS) {
+        ItemStack helmet = player.getInventory().getHelmet();
+        ItemStack chest = player.getInventory().getChestplate();
+        ItemStack legs = player.getInventory().getLeggings();
+        ItemStack boots = player.getInventory().getBoots();
+        if (type(helmet) == Material.NETHERITE_HELMET && type(chest) == Material.NETHERITE_CHESTPLATE &&
+                type(legs) == Material.NETHERITE_LEGGINGS && type(boots) == Material.NETHERITE_BOOTS &&
+                !invalidItem(helmet) && !invalidItem(chest) && !invalidItem(legs) && !invalidItem(boots)) {
             emit(player, new SignalKey(SignalType.ARMOR_COMPLETE, "NETHERITE"),
                     perTick(player, "armor", Material.NETHERITE_CHESTPLATE),
                     "full netherite set after trusted smithing");
@@ -185,8 +187,12 @@ public final class ChallengeSignalListener implements Listener {
         }
     }
 
+    private boolean invalidItem(ItemStack item) {
+        return isTestItem(item) || adminGuard.isInvalidOrigin(item);
+    }
+
     private boolean isTestItem(ItemStack item) {
-        if (!item.hasItemMeta()) return false;
+        if (item == null || item.getType().isAir() || !item.hasItemMeta()) return false;
         Byte marker = item.getItemMeta().getPersistentDataContainer().get(testItemKey, PersistentDataType.BYTE);
         return marker != null && marker != 0;
     }

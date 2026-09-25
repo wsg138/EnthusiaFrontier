@@ -9,13 +9,20 @@ import org.enthusia.tempchallenges.application.ClaimService;
 import org.enthusia.tempchallenges.application.EligibilityPolicy;
 import org.enthusia.tempchallenges.application.OrderedChallengeProcessor;
 import org.enthusia.tempchallenges.domain.ActorIdentity;
+import org.enthusia.tempchallenges.domain.ChallengeAttempt;
 import org.enthusia.tempchallenges.domain.ChallengeDefinition;
+import org.enthusia.tempchallenges.domain.ClaimResult;
+import org.enthusia.tempchallenges.domain.Eligibility;
 import org.enthusia.tempchallenges.domain.EventState;
+import org.enthusia.tempchallenges.domain.SignalKey;
+import org.enthusia.tempchallenges.domain.SignalType;
 import org.enthusia.tempchallenges.domain.WinnerRecord;
 import org.enthusia.tempchallenges.persistence.JdbcChallengeLedger;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -27,6 +34,7 @@ public final class TempChallengesPlugin extends JavaPlugin {
     private JdbcChallengeLedger ledger;
     private RewardCoordinator rewards;
     private FloodgateIdentityResolver identities;
+    private ClaimService claimService;
     private String eventId;
     private EventState eventState;
 
@@ -45,12 +53,12 @@ public final class TempChallengesPlugin extends JavaPlugin {
                     getConfig().getBoolean("eligibility.exclude-operators", true),
                     getConfig().getBoolean("eligibility.allow-adventure", false));
             long guardSeconds = Math.max(1, getConfig().getLong("eligibility.admin-mutation-guard-seconds", 10));
-            AdminMutationGuard adminGuard = new AdminMutationGuard(Duration.ofSeconds(guardSeconds));
+            AdminMutationGuard adminGuard = new AdminMutationGuard(this, Duration.ofSeconds(guardSeconds));
             DragonFightTracker dragonTracker = new DragonFightTracker(identities);
             rewards = new RewardCoordinator(this, ledger, registry, identities, eventId,
                     getConfig().getString("presentation.advancement-tree", "frontier_firsts"));
             OrderedChallengeProcessor processor = new OrderedChallengeProcessor(ledger);
-            ClaimService claimService = new ClaimService(processor, rewards,
+            claimService = new ClaimService(processor, rewards,
                     exception -> getLogger().severe("Reward delivery failed after durable claim: " + exception.getMessage()));
             ChallengeSignalListener signals = new ChallengeSignalListener(this, registry, claimService, eligibility,
                     identities, adminGuard, dragonTracker, ledger, eventId, eventState,
@@ -104,28 +112,35 @@ public final class TempChallengesPlugin extends JavaPlugin {
                     sender.sendMessage("§aExported to " + file);
                 }
                 case "verify" -> verify(sender, args);
-                case "reconcile" -> {
-                    if (args.length < 2) {
-                        sender.sendMessage("§e/tempchallenge reconcile <online-player>");
-                        break;
-                    }
-                    Player player = Bukkit.getPlayerExact(args[1]);
-                    if (player == null) {
-                        sender.sendMessage("§cPlayer must be online.");
-                        break;
-                    }
-                    rewards.reconcile(player);
-                    sender.sendMessage("§aReconciled portable/presentation rewards for " + player.getName() + '.');
-                }
+                case "reconcile" -> reconcile(sender, args);
                 case "revoke-first" -> revoke(sender, args);
+                case "award-first" -> awardFirst(sender, args);
                 case "test" -> dryRun(sender, args);
-                default -> sender.sendMessage("§e/tempchallenge status|verify <id> [player]|export|reconcile <player>|revoke-first <id> <winner-uuid>|test <id> <player>");
+                default -> usage(sender);
             }
         } catch (Exception ex) {
             getLogger().warning("Command failed: " + ex);
             sender.sendMessage("§cCommand failed; see console.");
         }
         return true;
+    }
+
+    private void usage(CommandSender sender) {
+        sender.sendMessage("§e/tempchallenge status|verify <id> [player]|export|reconcile <player>|revoke-first <id> <winner-uuid>|award-first <id> <player> CONFIRM <reason>|test <id> <player>");
+    }
+
+    private void reconcile(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage("§e/tempchallenge reconcile <online-player>");
+            return;
+        }
+        Player player = Bukkit.getPlayerExact(args[1]);
+        if (player == null) {
+            sender.sendMessage("§cPlayer must be online.");
+            return;
+        }
+        rewards.reconcile(player);
+        sender.sendMessage("§aReconciled local-winner rewards and portable presentation for " + player.getName() + '.');
     }
 
     private void status(CommandSender sender) {
@@ -186,7 +201,38 @@ public final class TempChallengesPlugin extends JavaPlugin {
             return;
         }
         rewards.revokePortable(expected, challenge);
-        sender.sendMessage("§aRevoked durable first, explicit LuckPerms node, and online tag/advancement projections where available.");
+        sender.sendMessage("§aRevoked durable first, explicit LuckPerms node, and online tag/advancement projections. Previously granted XP is not subtracted.");
+    }
+
+    private void awardFirst(CommandSender sender, String[] args) {
+        if (args.length < 5 || !args[3].equalsIgnoreCase("CONFIRM")) {
+            sender.sendMessage("§e/tempchallenge award-first <id> <online-player> CONFIRM <reason>");
+            sender.sendMessage("§7This deliberately bypasses normal player eligibility, but never bypasses a locked challenge or closed event.");
+            return;
+        }
+        ChallengeDefinition challenge = registry.get(args[1]);
+        Player player = Bukkit.getPlayerExact(args[2]);
+        if (challenge == null || player == null) {
+            sender.sendMessage("§cUnknown challenge or player offline.");
+            return;
+        }
+        String reason = String.join(" ", Arrays.copyOfRange(args, 4, args.length)).trim();
+        if (reason.isBlank()) {
+            sender.sendMessage("§cA review reason is required.");
+            return;
+        }
+        ActorIdentity actor = identities.resolve(player);
+        SignalKey signal = new SignalKey(SignalType.STAFF_OVERRIDE, challenge.id());
+        ChallengeAttempt attempt = new ChallengeAttempt(eventId, challenge, actor,
+                "staff-override:" + challenge.id() + ':' + actor.uuid() + ':' + System.nanoTime(),
+                signal, "manual override by " + sender.getName() + ": " + reason,
+                Instant.now(), Eligibility.allow(), eventState);
+        ClaimResult result = claimService.handle(attempt);
+        if (result.claimed()) {
+            sender.sendMessage("§aDurably awarded " + challenge.id() + " to " + actor.name() + " through the explicit staff override path.");
+        } else {
+            sender.sendMessage("§eOverride not awarded: " + result.decision() + " — " + result.message());
+        }
     }
 
     private void dryRun(CommandSender sender, String[] args) {

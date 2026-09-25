@@ -1,6 +1,7 @@
 package org.enthusia.tempchallenges.paper;
 
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.enthusia.tempchallenges.domain.ChallengeDefinition;
 import org.enthusia.tempchallenges.domain.SignalKey;
 import org.junit.jupiter.api.Test;
 
@@ -14,14 +15,28 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConfigContractTest {
-    @Test void requiredFrontierFirstsAndAuthoritativeSignalsArePresent() {
+    @Test
+    void allFrontierFirstDefinitionsAreCompleteAndRequiredSignalsExist() {
         YamlConfiguration config = YamlConfiguration.loadConfiguration(new InputStreamReader(
                 Objects.requireNonNull(getClass().getClassLoader().getResourceAsStream("config.yml")), StandardCharsets.UTF_8));
         ChallengeRegistry registry = ChallengeRegistry.load(config);
-        List<String> required = List.of("first_diamonds", "first_nether", "first_fortress", "first_ancient_debris",
+
+        List<String> all = List.of(
+                "first_diamonds", "first_nether", "first_fortress", "first_ancient_debris",
                 "first_netherite_armor", "first_stronghold", "first_mace", "first_end", "first_dragon",
-                "first_elytra", "first_wither", "first_beacon");
-        for (String id : required) assertNotNull(registry.get(id), id);
+                "first_elytra", "first_wither", "first_beacon", "first_iron", "first_obsidian",
+                "first_blaze_rod", "first_netherite_ingot", "first_heavy_core", "first_dragon_egg",
+                "first_totem", "first_enchanted_golden_apple", "first_full_beacon");
+        for (String id : all) {
+            ChallengeDefinition challenge = registry.get(id);
+            assertNotNull(challenge, id);
+            assertFalse(challenge.permission().isBlank(), id + " permission");
+            assertFalse(challenge.tag().isBlank(), id + " tag");
+            assertFalse(challenge.advancementNode().isBlank(), id + " advancement");
+            assertFalse(challenge.signals().isEmpty(), id + " signals");
+            assertTrue(challenge.xp() > 0, id + " XP");
+        }
+
         assertTrue(registry.get("first_elytra").locked());
         assertFalse(registry.route(SignalKey.parse("ITEM_ACQUIRED:DIAMOND")).isEmpty());
         assertFalse(registry.route(SignalKey.parse("WORLD_ENTRY:NETHER")).isEmpty());
