@@ -53,6 +53,9 @@ cleanup:
   max-chunks-per-tick: 1
   min-player-distance-chunks: 8
   max-mspt: 35.0
+  # Detailed candidate/reclaim decisions. Leave off in normal production unless
+  # diagnosing cleanup because active exploration can produce substantial logs.
+  audit-log: false
   physical-reclaim: true
   # If destructive cleanup is enabled, refuse startup unless this exact Leaf/Paper
   # build exposes the validated Moonrise storage adapter.
