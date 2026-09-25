@@ -7,6 +7,7 @@ on:
       - 'server-src/EnthusiaTempChallenges/**'
       - 'server/plugins/EnthusiaAdvancements/trees/frontier_firsts.conf'
       - 'tools/build-frontier-challenges.sh'
+      - 'tools/smoke-frontier-challenges.sh'
       - '.github/workflows/frontier-challenges-build.yml'
   workflow_dispatch:
 
@@ -32,6 +33,8 @@ jobs:
           cache: maven
       - name: Build, test, and assemble runtime
         run: bash tools/build-frontier-challenges.sh
+      - name: Smoke test on real Leaf 1.21.11
+        run: bash tools/smoke-frontier-challenges.sh
       - name: Preserve built runtime before reconciling branch
         run: |
           mkdir -p "$RUNNER_TEMP/frontier-built"
@@ -72,6 +75,7 @@ jobs:
             if ! git diff --quiet "$GITHUB_SHA" "$REMOTE" -- \
               server-src/EnthusiaTempChallenges \
               tools/build-frontier-challenges.sh \
+              tools/smoke-frontier-challenges.sh \
               server/plugins/EnthusiaAdvancements/trees/frontier_firsts.conf \
               .github/workflows/frontier-challenges-build.yml; then
               echo 'Challenge source/build definition changed after this workflow started; refusing to publish stale binaries.' >&2
