@@ -112,11 +112,10 @@ public final class CleanupService {
                 + " reclaimIntent=" + (candidate.hasReclaimIntent() ? candidate.reclaimIntentAt() : "none"));
     }
 
-    private void auditRegion(
-            String worldName, RegionKey region, RegionReclaimResult outcome, String reason) {
+    private void auditRegion(String worldName, RegionKey region, RegionReclaimResult outcome, String reason) {
         auditSink.accept("FRONTIER_CLEANUP_AUDIT stage=region outcome=" + outcome.name().toLowerCase()
                 + " reason=" + reason
                 + " world=" + worldName
-                + " region=" + region.regionX() + "," + region.regionZ());
+                + " region=" + region.x() + "," + region.z());
     }
 }
