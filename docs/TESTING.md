@@ -1,6 +1,6 @@
 # Testing Strategy
 
-Frontier has policy/persistence risk and real Paper/Moonrise storage risk, so validation is split across unit CI, shared Sentinel smoke tests, and a dedicated destructive real-Paper acceptance run.
+Frontier has three distinct risk surfaces: pure policy/persistence correctness, real Leaf/Paper generation/runtime behavior, and destructive Moonrise storage behavior. Validation is intentionally split so evidence from one layer is never overstated as proof of another.
 
 ## 1. Normal CI
 
@@ -15,15 +15,91 @@ Required gates:
 - Java 21 compilation with `-Xlint:all -Werror`;
 - JUnit domain/application/config tests;
 - SQLite integration tests using temporary databases, including durable reclaim-intent restart recovery and exact-key reservation;
+- Generation Shield tests proving aggregate rate/concurrency, 40-requester non-multiplication, global dedupe, fairness, bounded queue behavior, true zero admission, durable-readiness slot retention and fail-closed failures;
 - MCA header/negative-coordinate/sidecar tests;
 - SpotBugs at max effort / low-confidence reporting with failures enforced;
 - 70% JaCoCo line coverage over the independently unit-testable core/persistence surface;
 - reproducible shaded deployable JAR;
 - production platform-baseline guard.
 
-Real Bukkit/Paper/Moonrise runtime adapters are not counted in the JaCoCo denominator because JVM tests cannot execute their real contract honestly. They are still compiled with warnings-as-errors and analyzed by SpotBugs.
+Real Bukkit/Paper/Moonrise runtime adapters are not counted in the JaCoCo denominator because JVM tests cannot execute their real contract honestly. They are still compiled with warnings-as-errors, analyzed by SpotBugs and exercised by isolated real-server workflows.
 
-## 2. Enthusia Sentinel
+## 2. Exact Frontier runtime on Leaf 1.21.11
+
+The `Publish Frontier server runtime binaries` workflow is a publication gate, not merely a packaging job.
+
+Before it may publish the Frontier runtime JAR it:
+
+1. builds `clean check shadowJar`;
+2. saves the exact JAR SHA-256;
+3. rebuilds the same source from clean outputs;
+4. requires the second JAR to be byte-for-byte identical;
+5. downloads the pinned Leaf 1.21.11-179 runtime and verifies its pinned SHA-256;
+6. boots the exact produced Frontier JAR on that real Leaf runtime;
+7. runs `/frontier status` and requires the global Paper-async Generation Shield to be active;
+8. runs the isolated 1/10/20/40 generation-admission suite described below;
+9. stops Leaf cleanly;
+10. verifies SQLite integrity and durable generated rows;
+11. restarts the **same** world/plugin state and again requires clean enable/status/shutdown;
+12. verifies the same durable generated rows still exist and no safety latch appeared;
+13. only then uploads/publishes the runtime binary and source/hash manifest.
+
+The workflow uploads quality reports, exact binary hashes and bounded Leaf logs as evidence.
+
+## 3. Real-Leaf 1/10/20/40 aggregate generation proof
+
+`FrontierGenerationLoadHarness` is fenced to the disposable loopback Sentinel-style server and is driven only from server console with the exact confirmation token.
+
+Each case submits 48 unique virgin managed chunks through the **production** `GenerationShieldService`, the production `PaperChunkGenerationAdapter`, and the durable `SqliteGenerationReadinessAdapter`. The requests are distributed across 1, 10, 20 or 40 synthetic requester IDs.
+
+The suite requires:
+
+- the shield starts healthy and idle;
+- every initial request is queued rather than bypassed/already ready;
+- peak global in-flight generation never exceeds the configured whole-server upper bound;
+- elapsed admission time cannot be faster than the configured whole-server rate (with a small scheduler tolerance), so requester count cannot multiply throughput;
+- all requested chunks complete and become durable before the case finishes;
+- queue depth/in-flight state returns to zero between cases;
+- the shield stays healthy;
+- SQLite remains structurally healthy and contains all generated readiness rows after shutdown;
+- those rows survive a full Leaf restart.
+
+Each case emits:
+
+```text
+FRONTIER_GENERATION_LOAD_CASE
+  requesters=<1|10|20|40>
+  requests=48
+  admission_seconds=...
+  total_seconds=...
+  configured_rate_upper_bound=...
+  peak_queue=...
+  peak_in_flight=...
+  mspt_p50=...
+  mspt_p95=...
+  mspt_p99=...
+  mspt_max=...
+  peak_heap_mib=...
+```
+
+The exact-head run that introduced this gate (`036b6a11566c4de1454708dca2d303dedb5b0be7`, workflow run `36265091490`) passed with an 8 chunks/s / 4 concurrent configured upper bound:
+
+| synthetic requesters | 48-admission time | total case time | peak in-flight | MSPT p99 |
+|---:|---:|---:|---:|---:|
+| 1 | 8.024 s | 8.323 s | 4 | 5.213 ms |
+| 10 | 7.088 s | 7.537 s | 4 | 3.721 ms |
+| 20 | 7.090 s | 7.339 s | 3 | 3.391 ms |
+| 40 | 7.088 s | 7.238 s | 4 | 2.976 ms |
+
+The important result is the invariant: increasing requesters from 1 to 40 did not multiply the aggregate generation budget. The measured MSPT/heap values come from an ephemeral GitHub runner with a flat disposable world and are **not production tuning data**.
+
+### What this suite does not prove
+
+Synthetic requester IDs are not Minecraft clients. This suite does not validate packet timing, actual player movement, elytra/vehicle feel, network contention, client-side rubber-banding, or representative Enthusia plugin/player load.
+
+Those require a real or headless Minecraft-client staging run on representative Enthusia hardware. Do not fake those properties inside Sentinel Sim.
+
+## 4. Enthusia Sentinel shared staging
 
 Repository: `wsg138/EnthusiaStaff-Staging`
 
@@ -34,11 +110,11 @@ artifact: sentinel-plugin
 plugin JAR: plugin.jar
 ```
 
-The shared Sentinel service runs Frontier's declared `startup` and `restart` profiles in its trusted rootless Paper sandbox. These profiles validate exact-artifact provenance, plugin class loading, Paper/Moonrise reflection compatibility, SQLite startup/shutdown, clean restart, and state-directory reuse.
+The shared Sentinel service runs Frontier's declared `startup` and `restart` profiles in its trusted rootless Paper sandbox. These profiles validate exact-artifact provenance, plugin class loading, Paper/Moonrise reflection compatibility, SQLite startup/shutdown, clean restart and state-directory reuse.
 
-Sentinel's current generic restart executor does not execute arbitrary repository-declared `before-shutdown` / `after-restart` console actions. Frontier therefore does not claim that `PAPER_RESTART_OK` proves destructive reclaim behavior.
+Sentinel's current generic restart executor does not execute arbitrary repository-declared `before-shutdown` / `after-restart` console actions and does not provide a real/headless Minecraft-client primitive. Frontier therefore does not claim that generic `PAPER_RESTART_OK` proves generation-load or destructive-reclaim behavior.
 
-## 3. Real Paper Reclaim Acceptance
+## 5. Real Paper Reclaim Acceptance
 
 The repository-owned `Real Paper Reclaim Acceptance` GitHub Actions workflow is the destructive runtime gate. It runs for pull requests and again for every push to `main` so the merged commit receives its own exact-SHA evidence. It:
 
@@ -60,6 +136,7 @@ The acceptance harness itself:
 - records actual Moonrise storage occupancy;
 - durably reserves exactly those disposable chunks before destructive storage mutation;
 - logically clears CHUNK_DATA, ENTITY_DATA and POI_DATA;
+- invalidates generated readiness after logical clear;
 - persists deletion/protection state;
 - verifies those states after restart;
 - physically reclaims the empty MCA region container;
@@ -69,7 +146,7 @@ The acceptance harness itself:
 
 The workflow always uploads bounded server logs plus Paper and plugin hashes as evidence.
 
-## 4. Exact-main artifact
+## 6. Exact-main artifact
 
 `Sentinel Plugin Artifact` runs on pull requests and again on pushes to `main`. The `main` run rebuilds the merged commit and uploads the stable contract:
 
@@ -78,11 +155,11 @@ sentinel-plugin/plugin.jar
 sentinel-plugin/plugin.jar.sha256
 ```
 
-This removes any ambiguity between a validated PR-head JAR and the merge-commit SHA even when both commits have identical source trees. Both workflows also support manual dispatch for bounded recovery/revalidation.
+This removes ambiguity between a validated branch/PR-head JAR and the merge-commit SHA even when both commits have identical source trees. Workflows also support manual dispatch for bounded recovery/revalidation.
 
-## 5. Destructive safety fence
+## 7. Safety fences
 
-The acceptance command operates only when all of these are true:
+Destructive acceptance and generation-load commands operate only when all required isolated-runtime checks pass, including:
 
 - sender is server console;
 - exact confirmation token is supplied;
@@ -91,27 +168,31 @@ The acceptance command operates only when all of these are true:
 - `max-players <= 2`;
 - MOTD is exactly `Enthusia Sentinel isolated smoke test`.
 
-It is not a general production delete command.
+They are not general production commands.
 
-## 6. Crash/recovery evidence
+## 8. Crash/recovery evidence
 
 Normal CI proves the ordering invariant that destructive candidates require a SQLite-committed reclaim intent and that intents survive repository restart. Exact-key reservation is also covered so the runtime harness cannot bypass that invariant.
 
+Generation readiness likewise remains pending until the FULL-synchronous SQLite write completes, and the real-Leaf runtime gate proves those rows reopen after process restart.
+
 Runtime cleanup re-checks journal/MSPT/player/load/ticket/activity safety before Moonrise mutation. If final deletion persistence fails after logical clear, the persistent safety latch disables further cleanup while the durable intent remains available for diagnosis/recovery.
 
-## 7. Exact-head rule
+## 9. Exact-head rule
 
-Runtime evidence applies only to the exact plugin source SHA and exact produced JAR. Any code, safety-relevant configuration, test-harness, or workflow change invalidates prior runtime evidence. Pull-request evidence is therefore followed by exact-main artifact and real-Paper acceptance runs after merge.
+Runtime evidence applies only to the exact plugin source SHA and exact produced JAR. Any source, safety-relevant configuration, test-harness or workflow change invalidates prior runtime evidence. Publication therefore refuses to write a binary if the relevant branch source/validation definition advanced while the run was executing.
 
-## 8. Production rollout order
+## 10. Production rollout order
 
-1. exact-head CI, artifact, Sentinel startup/restart, and real-Paper reclaim acceptance all green;
-2. merged `main` artifact and real-Paper reclaim acceptance green for the merge commit;
-3. production generation throttling enabled with cleanup disabled;
-4. tracking/protection soak;
-5. cleanup enabled in dry-run only;
-6. inspect candidate reports/status and backup behavior;
-7. production with the `100000` permanent core and destructive cleanup still dry-run;
-8. explicit owner-reviewed destructive enable only after observed candidate reports and real disk-reclaim evidence are clean.
+1. exact-head CI, reproducible binary, real-Leaf startup/restart and 1/10/20/40 aggregate generation proof green;
+2. Sentinel shared startup/restart compatibility green;
+3. real/headless-client 1/10/20/40 frontier exploration on representative Enthusia hardware, measuring MSPT p50/p95/p99, TPS, CPU, memory/GC, queue backlog, generation latency and player edge delay;
+4. calibrate global shield bands from that evidence rather than GitHub-runner numbers;
+5. production generation shield enabled with cleanup disabled;
+6. tracking/protection soak;
+7. cleanup enabled in dry-run only;
+8. inspect candidate reports/status and backup behavior;
+9. production with the `100000` permanent core and destructive cleanup still dry-run;
+10. explicit owner-reviewed destructive enable only after observed candidate reports and real disk-reclaim evidence are clean.
 
-Enthusia production uses Leaf rather than stock Paper. The exact installed Leaf build is still protected by startup compatibility probes: when the generation/storage adapters are required, unsupported internals fail closed instead of using guessed reflection.
+Enthusia production uses Leaf. Unsupported required generation/storage internals fail closed instead of using guessed reflection.
