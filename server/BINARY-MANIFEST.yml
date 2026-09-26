@@ -60,7 +60,7 @@ challenge_runtime:
 
 # FRONTIER-PLUGIN-ARTIFACT-BEGIN
 frontier_plugin_runtime:
-  source_commit: 58e96dc65b4f4ffc8dbb27ba16b57fc3d1b7f110
+  source_commit: e36769076a6b3b2a41d043c4edb0c5095797fc6f
   java: 21
   minecraft: 1.21.11
   artifact: EnthusiaFrontier-0.1.1.jar
