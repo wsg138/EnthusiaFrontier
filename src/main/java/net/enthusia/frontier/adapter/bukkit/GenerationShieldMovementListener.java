@@ -128,10 +128,15 @@ public final class GenerationShieldMovementListener implements Listener {
         if (world == null || !managedWorlds.contains(world.getUID())) {
             return true;
         }
-        int radius = Math.min(
-                settings.maxGuardRadiusChunks(),
-                Math.max(player.getViewDistance(), player.getSimulationDistance())
-                        + settings.extraGuardRadiusChunks());
+
+        int radius = requiredGuardRadius(player, settings.extraGuardRadiusChunks());
+        if (radius > settings.maxGuardRadiusChunks()) {
+            // A silent cap would leave a ring that Paper may still load/generate outside
+            // Frontier's proven-ready buffer. Restrict exploration instead.
+            notifyBlocked(player, GenerationBufferStatus.FAIL_CLOSED);
+            return false;
+        }
+
         GenerationBufferStatus status = buffers.prepare(
                 requester(player),
                 world.getUID().toString(),
@@ -143,6 +148,17 @@ public final class GenerationShieldMovementListener implements Listener {
         }
         notifyBlocked(player, status);
         return false;
+    }
+
+    static int requiredGuardRadius(Player player, int extraGuardRadiusChunks) {
+        Objects.requireNonNull(player, "player");
+        if (extraGuardRadiusChunks < 0) {
+            throw new IllegalArgumentException("extraGuardRadiusChunks must be >= 0");
+        }
+        int runtimeDistance = Math.max(
+                Math.max(player.getViewDistance(), player.getSendViewDistance()),
+                player.getSimulationDistance());
+        return Math.addExact(runtimeDistance, extraGuardRadiusChunks);
     }
 
     private void notifyBlocked(Player player, GenerationBufferStatus status) {
