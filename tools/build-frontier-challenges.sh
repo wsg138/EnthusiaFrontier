@@ -36,6 +36,12 @@ BUILDTOOLS_URL="https://hub.spigotmc.org/jenkins/job/BuildTools/${BUILDTOOLS_BUI
 curl --fail --location --retry 3 --silent --show-error "$BUILDTOOLS_URL" -o "$WORK/BuildTools.jar"
 mkdir -p "$WORK/spigot-build" "$WORK/spigot-output"
 git config --global --unset-all core.autocrlf || true
+
+# setup-java may restore Maven cache entries from earlier workflow attempts. Remove
+# only Spigot's 1.21.11 snapshots so the artifact detected below is guaranteed to
+# have been produced by this exact pinned BuildTools invocation.
+SPIGOT_REPO_ROOT="$HOME/.m2/repository/org/spigotmc/spigot"
+rm -rf "$SPIGOT_REPO_ROOT"/1.21.11-R0.*-SNAPSHOT
 (
   cd "$WORK/spigot-build"
   MAVEN_OPTS='-Xmx2G' java -Xmx2G -jar "$WORK/BuildTools.jar" \
@@ -44,66 +50,47 @@ git config --global --unset-all core.autocrlf || true
     --output-dir "$WORK/spigot-output"
 )
 
-# UAA 2.8.1 pins Spigot 1.21.11-R0.1-SNAPSHOT, while the current pinned
-# BuildTools build resolves 1.21.11 to R0.2-SNAPSHOT. Consume the exact
-# Mojang-mapped artifact BuildTools actually installed, then stage its bytes
-# outside ~/.m2 before installing a compatibility coordinate for UAA. This
-# avoids mutating the source artifact while also tolerating classifier naming
-# differences between BuildTools revisions.
-SPIGOT_REPO_ROOT="$HOME/.m2/repository/org/spigotmc/spigot"
-SPIGOT_UAA_VERSION='1.21.11-R0.1-SNAPSHOT'
-SPIGOT_SOURCE="$(find "$SPIGOT_REPO_ROOT" -mindepth 2 -maxdepth 2 -type f \
-  -path '*/1.21.11-R0.*-SNAPSHOT/*-remapped-mojang.jar' -print 2>/dev/null | sort -V | tail -1 || true)"
-if [[ -z "$SPIGOT_SOURCE" ]]; then
-  SPIGOT_SOURCE="$(find "$SPIGOT_REPO_ROOT" -mindepth 2 -maxdepth 2 -type f \
-    -path '*/1.21.11-R0.*-SNAPSHOT/*-remapped.jar' -print 2>/dev/null | sort -V | tail -1 || true)"
-fi
-if [[ -z "$SPIGOT_SOURCE" || ! -s "$SPIGOT_SOURCE" ]]; then
-  echo 'BuildTools did not install a Mojang-mapped Spigot 1.21.11 development JAR into the local Maven repository.' >&2
+mapfile -t SPIGOT_MOJANG_CANDIDATES < <(
+  find "$SPIGOT_REPO_ROOT" -mindepth 2 -maxdepth 2 -type f \
+    -path '*/1.21.11-R0.*-SNAPSHOT/spigot-1.21.11-R0.*-SNAPSHOT-remapped-mojang.jar' \
+    -print 2>/dev/null | sort -V
+)
+if (( ${#SPIGOT_MOJANG_CANDIDATES[@]} != 1 )); then
+  printf 'Expected exactly one BuildTools 1.21.11 remapped-mojang JAR, found %d.\n' "${#SPIGOT_MOJANG_CANDIDATES[@]}" >&2
+  printf '  %s\n' "${SPIGOT_MOJANG_CANDIDATES[@]}" >&2
   exit 1
 fi
-
-SPIGOT_SOURCE_VERSION="$(basename "$(dirname "$SPIGOT_SOURCE")")"
-SPIGOT_SOURCE_SHA256="$(sha256sum "$SPIGOT_SOURCE" | awk '{print $1}')"
-SPIGOT_ALIAS_SOURCE="$WORK/spigot-1.21.11-remapped-mojang-source.jar"
-cp -- "$SPIGOT_SOURCE" "$SPIGOT_ALIAS_SOURCE"
-if [[ ! -s "$SPIGOT_ALIAS_SOURCE" ]]; then
-  echo 'Could not stage the BuildTools Mojang-mapped JAR outside the local Maven repository.' >&2
+SPIGOT_MOJANG="${SPIGOT_MOJANG_CANDIDATES[0]}"
+SPIGOT_VERSION="$(basename "$(dirname "$SPIGOT_MOJANG")")"
+SPIGOT_POM="$(dirname "$SPIGOT_MOJANG")/spigot-${SPIGOT_VERSION}.pom"
+if [[ ! -s "$SPIGOT_POM" ]]; then
+  echo "BuildTools installed the mapped JAR but not its Maven POM: $SPIGOT_POM" >&2
   exit 1
 fi
-if [[ "$(sha256sum "$SPIGOT_ALIAS_SOURCE" | awk '{print $1}')" != "$SPIGOT_SOURCE_SHA256" ]]; then
-  echo 'Staged Mojang-mapped JAR does not match the exact BuildTools artifact.' >&2
-  exit 1
-fi
-
-SPIGOT_MOJANG="$SPIGOT_REPO_ROOT/$SPIGOT_UAA_VERSION/spigot-$SPIGOT_UAA_VERSION-remapped-mojang.jar"
-if [[ "$SPIGOT_SOURCE" != "$SPIGOT_MOJANG" ]]; then
-  mvn -B --no-transfer-progress org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
-    -Dfile="$SPIGOT_ALIAS_SOURCE" \
-    -DgroupId=org.spigotmc \
-    -DartifactId=spigot \
-    -Dversion="$SPIGOT_UAA_VERSION" \
-    -Dpackaging=jar \
-    -Dclassifier=remapped-mojang \
-    -DgeneratePom=true
-fi
-if [[ ! -s "$SPIGOT_MOJANG" ]]; then
-  echo 'Could not create the remapped-mojang compatibility coordinate expected by UAA.' >&2
-  exit 1
-fi
-if [[ "$(sha256sum "$SPIGOT_MOJANG" | awk '{print $1}')" != "$SPIGOT_SOURCE_SHA256" ]]; then
-  echo 'Installed UAA compatibility artifact does not match the exact BuildTools Mojang-mapped JAR.' >&2
-  exit 1
-fi
-echo "Provisioned $(basename "$SPIGOT_MOJANG") from BuildTools #${BUILDTOOLS_BUILD} ${SPIGOT_SOURCE_VERSION} output (${SPIGOT_SOURCE_SHA256})."
+SPIGOT_SHA256="$(sha256sum "$SPIGOT_MOJANG" | awk '{print $1}')"
+echo "Using BuildTools #${BUILDTOOLS_BUILD} Maven coordinate org.spigotmc:spigot:${SPIGOT_VERSION}:remapped-mojang (${SPIGOT_SHA256})."
 
 echo '== UltimateAdvancementAPI: pinned 2.8.1 plugin source, 1.21.11 adapter only =='
 git clone --quiet https://github.com/frengor/UltimateAdvancementAPI.git "$WORK/uaa"
 git -C "$WORK/uaa" checkout --quiet 67d9576ae5e4ec55701ac653194bb77c5f1e708c
-python3 - "$WORK/uaa" <<'PY'
+python3 - "$WORK/uaa" "$SPIGOT_VERSION" <<'PY'
 from pathlib import Path
 import sys
 root = Path(sys.argv[1])
+spigot_version = sys.argv[2]
+
+# UAA 2.8.1 pins the Spigot snapshot current when it was released. BuildTools
+# may advance that snapshot revision while keeping Minecraft 1.21.11/NMS R7 the
+# same. Point the pinned adapter at the exact coordinate produced above so Maven
+# retains Spigot's real transitive dependency metadata instead of using a fake
+# compatibility POM.
+nms_pom = root / 'NMS/1_21_R7/pom.xml'
+nms_text = nms_pom.read_text()
+old_version = '<mc-version>1.21.11-R0.1-SNAPSHOT</mc-version>'
+new_version = f'<mc-version>{spigot_version}</mc-version>'
+if old_version not in nms_text:
+    raise SystemExit('Pinned UAA 1.21.11 adapter no longer has the expected Spigot version property')
+nms_pom.write_text(nms_text.replace(old_version, new_version, 1))
 
 def restrict_distribution(path: Path, mojang: bool) -> None:
     text = path.read_text()
