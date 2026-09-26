@@ -14,7 +14,8 @@ import java.util.logging.Level;
 import java.util.stream.Collectors;
 import net.enthusia.frontier.adapter.bukkit.BukkitCleanupCoordinator;
 import net.enthusia.frontier.adapter.bukkit.BukkitCleanupEnvironmentAdapter;
-import net.enthusia.frontier.adapter.bukkit.FrontierAcceptanceHarness;
+import net.enthusia.frontier.adapter.bukkit.FrierAcceptanceHarness;
+import net.enthusia.frontier.adapter.bukkit.FrontierGenerationLoadHarness;
 import net.enthusia.frontier.adapter.bukkit.FrontierListener;
 import net.enthusia.frontier.adapter.bukkit.GenerationShieldMovementListener;
 import net.enthusia.frontier.adapter.paper.MoonriseStorageReclaimAdapter;
@@ -66,6 +67,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
     private BukkitTask throttleTask;
     private BukkitCleanupCoordinator cleanupCoordinator;
     private FrontierAcceptanceHarness acceptanceHarness;
+    private FrontierGenerationLoadHarness generationLoadHarness;
     private SqliteGenerationReadinessAdapter generationReadiness;
     private GenerationShieldService generationShield;
     private GenerationShieldController generationShieldController;
@@ -125,6 +127,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
         generationBufferTask = null;
         cancelTask(generationPumpTask);
         generationPumpTask = null;
+        generationLoadHarness = null;
         if (generationShield != null) {
             generationShield.close();
             generationShield = null;
@@ -254,6 +257,8 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 policy, () -> getServer().getAverageTickTime(), generationShield);
         generationShieldController.sample();
         generationBuffers = new GenerationBufferCoordinator(generationShield, generationReadiness);
+        generationLoadHarness = new FrontierGenerationLoadHarness(
+                this, generationShield, shieldSettings, runtimePolicies);
 
         getServer().getPluginManager().registerEvents(
                 new GenerationShieldMovementListener(
@@ -379,6 +384,13 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                     return true;
                 }
                 return acceptanceHarness.execute(sender, args[1], args[2]);
+            }
+            if (args.length == 3 && args[0].equalsIgnoreCase("loadtest")) {
+                if (generationLoadHarness == null) {
+                    sender.sendMessage("§cReal-server generation load testing is unavailable on this runtime.");
+                    return true;
+                }
+                return generationLoadHarness.execute(sender, args[1], args[2]);
             }
             sender.sendMessage("§cUsage: /frontier status");
             return true;
