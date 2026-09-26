@@ -14,7 +14,7 @@ import java.util.logging.Level;
 import java.util.stream.Collectors;
 import net.enthusia.frontier.adapter.bukkit.BukkitCleanupCoordinator;
 import net.enthusia.frontier.adapter.bukkit.BukkitCleanupEnvironmentAdapter;
-import net.enthusia.frontier.adapter.bukkit.FrierAcceptanceHarness;
+import net.enthusia.frontier.adapter.bukkit.FrontierAcceptanceHarness;
 import net.enthusia.frontier.adapter.bukkit.FrontierGenerationLoadHarness;
 import net.enthusia.frontier.adapter.bukkit.FrontierListener;
 import net.enthusia.frontier.adapter.bukkit.GenerationShieldMovementListener;
