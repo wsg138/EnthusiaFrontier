@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Clock;
 import java.time.Instant;
@@ -129,10 +130,16 @@ public final class SqliteGenerationReadinessAdapter implements GenerationReadine
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() throws SQLException {
         writer.shutdown();
-        if (!writer.awaitTermination(CLOSE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-            safetyLatch.trip("generation readiness writer did not stop cleanly");
+        try {
+            if (!writer.awaitTermination(CLOSE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                safetyLatch.trip("generation readiness writer did not stop cleanly");
+                writer.shutdownNow();
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            safetyLatch.trip("generation readiness writer shutdown was interrupted");
             writer.shutdownNow();
         }
         synchronized (this) {
