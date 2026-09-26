@@ -5,7 +5,7 @@ runtime:
     sha256: 5da79782215c1a25edcd7c73b3523b7ecb7f4b86dc8a5846a176ed69bc2cd020
     source: https://github.com/Winds-Studio/Leaf/releases/download/ver-1.21.11/leaf-1.21.11-179.jar
 plugins:
-  EnthusiaFrontier-0.1.1.jar: 2d555b47d8734c9152acebd66a0c25445d699e1af33576932d269968f4a1d11b
+  EnthusiaFrontier-0.1.1.jar: 3485deaf4c814e7c811889341cdbce63c6fa9fa86fc9bfe214a9ccf086c1ce12
   CoreProtect-24.1.jar: a7137839a5b20d993e168381dee22136c4ca77979c9d5627ccbdb7c4058d737f
   InventoryRollbackPlus-1.8.2.jar: 2caada5cd90e86767466dd67c5f1b9616adafdccfe561da44d84985e9ffac43d
   EnthusiaPlaytime-3.7.2.jar: d6d79b11588c9d60ece254798480e83b7c286b1909d138c803db11f6a1ec9344
@@ -60,9 +60,9 @@ challenge_runtime:
 
 # FRONTIER-PLUGIN-ARTIFACT-BEGIN
 frontier_plugin_runtime:
-  source_commit: e36769076a6b3b2a41d043c4edb0c5095797fc6f
+  source_commit: bb36cff4912a8cc5e400fd698b14adb9ac899214
   java: 21
   minecraft: 1.21.11
   artifact: EnthusiaFrontier-0.1.1.jar
-  sha256: 2d555b47d8734c9152acebd66a0c25445d699e1af33576932d269968f4a1d11b
+  sha256: 3485deaf4c814e7c811889341cdbce63c6fa9fa86fc9bfe214a9ccf086c1ce12
 # FRONTIER-PLUGIN-ARTIFACT-END
