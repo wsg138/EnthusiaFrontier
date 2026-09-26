@@ -253,12 +253,15 @@ public final class FrontierGenerationLoadHarness {
         if (policy == null) {
             throw new IllegalStateException("world has no runtime Frontier policy");
         }
-        int coreEdgeChunk = Math.floorDiv(policy.radiusBlocks(), 16) + 1;
-        int base = Math.addExact(coreEdgeChunk, CORE_CLEARANCE_CHUNKS + caseIndex * CASE_SEPARATION_CHUNKS);
+        int coreEdgeChunk = Math.addExact(Math.floorDiv(policy.radiusBlocks(), 16), 1);
+        int caseOffset = Math.multiplyExact(caseIndex, CASE_SEPARATION_CHUNKS);
+        int base = Math.addExact(coreEdgeChunk, Math.addExact(CORE_CLEARANCE_CHUNKS, caseOffset));
         List<ChunkKey> keys = new ArrayList<>(REQUESTS_PER_CASE);
         for (int index = 0; index < REQUESTS_PER_CASE; index++) {
-            int x = Math.addExact(base, (index % GRID_COLUMNS) * CHUNK_SPACING);
-            int z = Math.addExact(base, (index / GRID_COLUMNS) * CHUNK_SPACING);
+            int column = Math.floorMod(index, GRID_COLUMNS);
+            int row = Math.floorDiv(index, GRID_COLUMNS);
+            int x = Math.addExact(base, Math.multiplyExact(column, CHUNK_SPACING));
+            int z = Math.addExact(base, Math.multiplyExact(row, CHUNK_SPACING));
             ChunkKey key = new ChunkKey(world.getUID().toString(), x, z);
             if (!policy.isManaged(key)) {
                 throw new IllegalStateException("selected chunk is not managed: " + key);
