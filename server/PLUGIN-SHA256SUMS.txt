@@ -1,4 +1,4 @@
-93f82219518bd6550525dc29608f239066176d6a56cf718e3b246d5ee6b6401b  server/plugins/EnthusiaTempChallenges-0.2.0-frontier.1.jar
+893bbe3a94f4467f4dc3fc10ef843e0f3ca2b5a9dd174d155ffeef2f995ff2fe  server/plugins/EnthusiaTempChallenges-0.2.0-frontier.1.jar
 9733423a2f0fa0bbaa15f7accca8390007e88f50affaff97aa6d0f24f18a1eae  server/plugins/EnthusiaAdvancements-1.0.0-frontier.jar
-c6dfff5238eb119207c7a1e98c3246c5751da0c44504789c055a73e662d0b55b  server/plugins/UltimateAdvancementAPI-2.8.1.jar
+d0e17a0228ceba0b9cb837b321c41678df058a669150eb18a421d674f1152052  server/plugins/UltimateAdvancementAPI-2.8.1.jar
 8aee3c250bdb66f9cb9641e3a5c2cbdb0336a96fca5afdc0488735bd8af13fe4  server/plugins/EnthusiaTags.jar
