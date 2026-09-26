@@ -18,9 +18,41 @@ tracking:
   mutation-queue-capacity: 65536
   mutation-batch-size: 512
 
+# Primary safety mechanism. These are WHOLE-SERVER limits, not per-player limits.
+# The values below are conservative staging starting points, not production-calibrated
+# claims. Validate them with the 1/10/20/40 explorer load suite on Enthusia hardware.
+generation-shield:
+  enabled: true
+  queue-capacity: 65536
+  # Actual buffer radius follows each player's runtime view/simulation distance plus
+  # this margin, capped below. The margin also protects rollback paths for vehicles.
+  extra-guard-radius-chunks: 2
+  max-guard-radius-chunks: 36
+  refresh-checks-per-tick: 4096
+  sample-period-ticks: 20
+  recovery-hysteresis-mspt: 2.0
+  levels:
+    - name: healthy
+      enter-mspt: 0.0
+      chunks-per-second: 8.0
+      max-concurrent: 4
+    - name: elevated
+      enter-mspt: 25.0
+      chunks-per-second: 4.0
+      max-concurrent: 3
+    - name: pressured
+      enter-mspt: 35.0
+      chunks-per-second: 2.0
+      max-concurrent: 2
+    - name: critical
+      enter-mspt: 45.0
+      chunks-per-second: 0.0
+      max-concurrent: 0
+
+# Secondary defense-in-depth only. Paper/Moonrise applies these per player, so this
+# section must never be treated as the aggregate server generation budget. In Paper,
+# a generation rate of 0 is not a pause; the global shield above owns true pausing.
 throttle:
-  # If true, startup fails if this Paper/Leaf build cannot expose the expected
-  # runtime per-player chunk-generation controls.
   require-supported-adapter: true
   sample-period-ticks: 20
   recovery-hysteresis-mspt: 2.0

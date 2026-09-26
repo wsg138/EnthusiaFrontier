@@ -4,33 +4,49 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 import net.enthusia.frontier.adapter.bukkit.BukkitCleanupCoordinator;
 import net.enthusia.frontier.adapter.bukkit.BukkitCleanupEnvironmentAdapter;
 import net.enthusia.frontier.adapter.bukkit.FrontierAcceptanceHarness;
 import net.enthusia.frontier.adapter.bukkit.FrontierListener;
+import net.enthusia.frontier.adapter.bukkit.GenerationShieldMovementListener;
 import net.enthusia.frontier.adapter.paper.MoonriseStorageReclaimAdapter;
+import net.enthusia.frontier.adapter.paper.PaperChunkGenerationAdapter;
 import net.enthusia.frontier.adapter.paper.PaperGenerationThrottleAdapter;
 import net.enthusia.frontier.adapter.persistence.FileSafetyLatch;
 import net.enthusia.frontier.adapter.persistence.SqliteFrontierRepository;
+import net.enthusia.frontier.adapter.persistence.SqliteGenerationReadinessAdapter;
 import net.enthusia.frontier.adapter.simulation.SimulationGenerationThrottleAdapter;
 import net.enthusia.frontier.application.AdaptiveThrottleService;
 import net.enthusia.frontier.application.CleanupService;
 import net.enthusia.frontier.application.FrontierStats;
 import net.enthusia.frontier.application.FrontierTrackingService;
+import net.enthusia.frontier.application.GenerationBufferCoordinator;
+import net.enthusia.frontier.application.GenerationShieldController;
+import net.enthusia.frontier.application.GenerationShieldMetrics;
+import net.enthusia.frontier.application.GenerationShieldService;
 import net.enthusia.frontier.application.GenerationThrottlePort;
 import net.enthusia.frontier.application.MutationJournal;
 import net.enthusia.frontier.application.SafetyLatch;
 import net.enthusia.frontier.application.ServerPerformancePort;
 import net.enthusia.frontier.application.StorageReclaimPort;
 import net.enthusia.frontier.config.FrontierSettings;
+import net.enthusia.frontier.config.GenerationShieldSettings;
 import net.enthusia.frontier.domain.AdaptiveThrottlePolicy;
+import net.enthusia.frontier.domain.ChunkKey;
 import net.enthusia.frontier.domain.CoreBoundaryPolicy;
+import net.enthusia.frontier.domain.GenerationShieldLevel;
+import net.enthusia.frontier.domain.GenerationShieldPolicy;
 import net.enthusia.frontier.domain.ThrottleLevel;
+import org.bukkit.Chunk;
+import org.bukkit.World;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -41,6 +57,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
     private static final double SIMULATED_MSPT = 20.0;
 
     private FrontierSettings settings;
+    private GenerationShieldSettings shieldSettings;
     private SqliteFrontierRepository repository;
     private SafetyLatch safetyLatch;
     private MutationJournal mutationJournal;
@@ -49,14 +66,23 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
     private BukkitTask throttleTask;
     private BukkitCleanupCoordinator cleanupCoordinator;
     private FrontierAcceptanceHarness acceptanceHarness;
+    private SqliteGenerationReadinessAdapter generationReadiness;
+    private GenerationShieldService generationShield;
+    private GenerationShieldController generationShieldController;
+    private GenerationBufferCoordinator generationBuffers;
+    private BukkitTask generationPumpTask;
+    private BukkitTask generationBufferTask;
+    private BukkitTask generationSampleTask;
     private String throttleAdapterMode = "uninitialized";
     private String cleanupAdapterMode = "inactive";
+    private String generationShieldMode = "inactive";
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         try {
             settings = FrontierSettings.load(getConfig());
+            shieldSettings = GenerationShieldSettings.load(getConfig());
             Path dataFolder = getDataFolder().toPath();
             repository = new SqliteFrontierRepository(dataFolder.resolve("frontier.db"));
             repository.initialize();
@@ -79,10 +105,12 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(new FrontierListener(tracking), this);
 
             initializeThrottle();
+            initializeGenerationShield(dataFolder);
             initializeCleanup(tracking);
             registerCommand();
             getLogger().info("EnthusiaFrontier enabled for " + settings.worldPolicies().size()
-                    + " world(s); cleanup=" + cleanupStatus() + ".");
+                    + " world(s); generation-shield=" + generationShieldMode
+                    + "; cleanup=" + cleanupStatus() + ".");
         } catch (Exception exception) {
             getLogger().log(Level.SEVERE, "EnthusiaFrontier failed safe during startup", exception);
             getServer().getPluginManager().disablePlugin(this);
@@ -91,6 +119,16 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        cancelTask(generationSampleTask);
+        generationSampleTask = null;
+        cancelTask(generationBufferTask);
+        generationBufferTask = null;
+        cancelTask(generationPumpTask);
+        generationPumpTask = null;
+        if (generationShield != null) {
+            generationShield.close();
+            generationShield = null;
+        }
         if (cleanupCoordinator != null) {
             cleanupCoordinator.close();
             cleanupCoordinator = null;
@@ -105,6 +143,14 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
             } catch (Exception exception) {
                 getLogger().log(Level.SEVERE, "Failed to restore original generation limits", exception);
             }
+        }
+        if (generationReadiness != null) {
+            try {
+                generationReadiness.close();
+            } catch (Exception exception) {
+                getLogger().log(Level.SEVERE, "Failed to close generation readiness ledger", exception);
+            }
+            generationReadiness = null;
         }
         if (mutationJournal != null) {
             mutationJournal.close();
@@ -129,7 +175,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
         } else {
             try {
                 throttlePort = PaperGenerationThrottleAdapter.create();
-                throttleAdapterMode = "paper";
+                throttleAdapterMode = "paper-defense-in-depth";
                 performancePort = () -> getServer().getAverageTickTime();
             } catch (ReflectiveOperationException | RuntimeException exception) {
                 throttleAdapterMode = "unsupported";
@@ -139,7 +185,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                             exception);
                 }
                 getLogger().log(Level.WARNING,
-                        "Generation throttle adapter unavailable; tracking will continue because throttle.require-supported-adapter=false",
+                        "Per-player Paper generation throttle unavailable; global Frontier shield remains primary",
                         exception);
                 return;
             }
@@ -157,6 +203,76 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 this::sampleThrottle,
                 settings.throttleSamplePeriodTicks(),
                 settings.throttleSamplePeriodTicks());
+    }
+
+    private void initializeGenerationShield(Path dataFolder) throws Exception {
+        if (!shieldSettings.enabled()) {
+            generationShieldMode = "disabled";
+            return;
+        }
+        if (isMockBukkitRuntime()) {
+            generationShieldMode = "simulation-unavailable";
+            return;
+        }
+
+        Map<UUID, CoreBoundaryPolicy> runtimePolicies = new HashMap<>();
+        List<ChunkKey> loadedManagedChunks = new ArrayList<>();
+        for (Map.Entry<String, CoreBoundaryPolicy> entry : settings.worldPolicies().entrySet()) {
+            World world = getServer().getWorld(entry.getKey());
+            if (world == null) {
+                throw new IllegalStateException("managed world is not loaded: " + entry.getKey());
+            }
+            UUID worldId = world.getUID();
+            runtimePolicies.put(worldId, entry.getValue());
+            for (Chunk chunk : world.getLoadedChunks()) {
+                ChunkKey key = new ChunkKey(worldId.toString(), chunk.getX(), chunk.getZ());
+                if (entry.getValue().isManaged(key)) {
+                    loadedManagedChunks.add(key);
+                }
+            }
+        }
+
+        generationReadiness = new SqliteGenerationReadinessAdapter(
+                dataFolder.resolve("frontier.db"), safetyLatch, Clock.systemUTC());
+        generationReadiness.initialize(runtimePolicies.keySet().stream().map(UUID::toString).toList());
+        generationReadiness.adoptLoaded(loadedManagedChunks);
+
+        generationShield = new GenerationShieldService(
+                shieldSettings.queueCapacity(),
+                key -> isManaged(runtimePolicies, key),
+                generationReadiness,
+                new PaperChunkGenerationAdapter(getServer()),
+                () -> mutationJournal.isHealthy() && !safetyLatch.isTripped(),
+                System::nanoTime,
+                message -> {
+                    safetyLatch.trip(message);
+                    getLogger().severe(message);
+                });
+        GenerationShieldPolicy policy = new GenerationShieldPolicy(
+                shieldSettings.levels(), shieldSettings.recoveryHysteresisMspt());
+        generationShieldController = new GenerationShieldController(
+                policy, () -> getServer().getAverageTickTime(), generationShield);
+        generationShieldController.sample();
+        generationBuffers = new GenerationBufferCoordinator(generationShield, generationReadiness);
+
+        getServer().getPluginManager().registerEvents(
+                new GenerationShieldMovementListener(
+                        this, generationBuffers, shieldSettings, Set.copyOf(runtimePolicies.keySet())),
+                this);
+
+        generationPumpTask = getServer().getScheduler().runTaskTimer(
+                this, generationShield::pump, 1L, 1L);
+        generationBufferTask = getServer().getScheduler().runTaskTimer(
+                this,
+                () -> generationBuffers.refresh(shieldSettings.refreshChecksPerTick()),
+                1L,
+                1L);
+        generationSampleTask = getServer().getScheduler().runTaskTimer(
+                this,
+                this::sampleGenerationShield,
+                shieldSettings.samplePeriodTicks(),
+                shieldSettings.samplePeriodTicks());
+        generationShieldMode = "global-paper-async";
     }
 
     private void initializeCleanup(FrontierTrackingService tracking) throws Exception {
@@ -203,7 +319,8 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 new BukkitCleanupEnvironmentAdapter(getServer()),
                 storage,
                 Clock.systemUTC(),
-                settings.cleanup().auditLog() ? getLogger()::info : ignored -> { });
+                settings.cleanup().auditLog() ? getLogger()::info : ignored -> { },
+                generationReadiness == null ? ignored -> { } : generationReadiness::forget);
         cleanupCoordinator = new BukkitCleanupCoordinator(
                 this,
                 settings.cleanup(),
@@ -232,6 +349,18 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 throttleTask.cancel();
                 throttleTask = null;
             }
+        }
+    }
+
+    private void sampleGenerationShield() {
+        if (generationShieldController == null || generationShield == null) {
+            return;
+        }
+        try {
+            generationShieldController.sample();
+        } catch (RuntimeException exception) {
+            safetyLatch.trip("global generation shield MSPT controller failed");
+            getLogger().log(Level.SEVERE, "Global generation shield failed closed", exception);
         }
     }
 
@@ -272,8 +401,28 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                         : level.name() + " rate=" + level.limits().maxGenerateRate()
                                 + "/s concurrent=" + level.limits().maxConcurrentGenerations();
         double mspt = throttleService == null ? 0.0 : throttleService.lastMspt();
-        lines.add(String.format("§7MSPT: §f%.2f §7throttle: §f%s §7adapter: §f%s",
+        lines.add(String.format("§7MSPT: §f%.2f §7Paper per-player defense: §f%s §7adapter: §f%s",
                 mspt, throttleStatus, throttleAdapterMode));
+
+        if (generationShield != null) {
+            GenerationShieldMetrics metrics = generationShield.metrics();
+            GenerationShieldLevel shieldLevel = generationShieldController.currentLevel();
+            String shieldLevelText = shieldLevel == null ? "initializing" : shieldLevel.name();
+            lines.add("§7global shield: §f" + shieldLevelText
+                    + " §7rate=§f" + generationShield.limits().chunksPerSecond() + "/s"
+                    + " §7concurrent=§f" + generationShield.limits().maxConcurrent()
+                    + " §7queued=§f" + metrics.queued()
+                    + " §7in-flight=§f" + metrics.inFlight()
+                    + " §7healthy=§f" + metrics.healthy());
+            lines.add("§7shield throughput: started=§f" + metrics.started()
+                    + " §7completed=§f" + metrics.completed()
+                    + " §7deduped=§f" + metrics.deduplicated()
+                    + " §7rejected=§f" + metrics.rejected()
+                    + " §7pending buffers=§f" + generationBuffers.pendingBuffers()
+                    + " §7ready cache=§f" + generationReadiness.cachedChunks());
+        } else {
+            lines.add("§7global shield: §f" + generationShieldMode);
+        }
 
         if (mutationJournal != null) {
             lines.add("§7ledger queue: §f" + mutationJournal.queueDepth()
@@ -281,7 +430,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                     + " §7healthy: §f" + mutationJournal.isHealthy());
         }
         if (safetyLatch != null) {
-            lines.add("§7cleanup safety latch: §f" + (safetyLatch.isTripped() ? "TRIPPED" : "clear")
+            lines.add("§7safety latch: §f" + (safetyLatch.isTripped() ? "TRIPPED" : "clear")
                     + (safetyLatch.isTripped() ? " §7(" + safetyLatch.reason() + ")" : ""));
         }
         if (repository != null) {
@@ -308,6 +457,21 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
             return "disabled";
         }
         return "inactive";
+    }
+
+    private static boolean isManaged(Map<UUID, CoreBoundaryPolicy> policies, ChunkKey key) {
+        try {
+            CoreBoundaryPolicy policy = policies.get(UUID.fromString(key.worldUuid()));
+            return policy != null && policy.isManaged(key);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
+    private static void cancelTask(BukkitTask task) {
+        if (task != null) {
+            task.cancel();
+        }
     }
 
     private static String formatWorldPolicy(Map.Entry<String, CoreBoundaryPolicy> entry) {

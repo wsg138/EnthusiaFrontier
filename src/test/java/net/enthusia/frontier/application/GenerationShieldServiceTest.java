@@ -131,6 +131,27 @@ class GenerationShieldServiceTest {
     }
 
     @Test
+    void durableReadinessMustFinishBeforeConcurrencySlotIsReleased() {
+        Harness harness = new Harness(8, true);
+        harness.readiness.deferCommits = true;
+        harness.service.setLimits(new GlobalGenerationLimits(1000.0, 1));
+        ChunkKey first = key(1, 8);
+        ChunkKey second = key(2, 8);
+        harness.service.request("a", first);
+        harness.service.request("b", second);
+        harness.service.pump();
+        harness.generation.complete(first);
+        harness.advanceMillis(10);
+
+        assertEquals(0, harness.service.pump());
+        assertEquals(1, harness.service.metrics().inFlight());
+        harness.readiness.completeCommit(first);
+        assertEquals(0, harness.service.metrics().inFlight());
+        assertEquals(1, harness.service.metrics().completed());
+        assertEquals(1, harness.service.pump());
+    }
+
+    @Test
     void generationFailureLatchesShieldUnhealthy() {
         Harness harness = new Harness(8, true);
         harness.service.setLimits(new GlobalGenerationLimits(10.0, 1));
@@ -175,6 +196,8 @@ class GenerationShieldServiceTest {
 
     private static final class FakeReadiness implements GenerationReadinessPort {
         private final Set<ChunkKey> ready = new HashSet<>();
+        private final Map<ChunkKey, CompletableFuture<Void>> commits = new HashMap<>();
+        private boolean deferCommits;
 
         @Override
         public boolean isReady(ChunkKey key) {
@@ -182,8 +205,18 @@ class GenerationShieldServiceTest {
         }
 
         @Override
-        public void markReady(ChunkKey key) {
-            ready.add(key);
+        public CompletableFuture<Void> markReady(ChunkKey key) {
+            if (!deferCommits) {
+                ready.add(key);
+                return CompletableFuture.completedFuture(null);
+            }
+            CompletableFuture<Void> future = new CompletableFuture<>();
+            commits.put(key, future);
+            return future.thenRun(() -> ready.add(key));
+        }
+
+        private void completeCommit(ChunkKey key) {
+            commits.get(key).complete(null);
         }
     }
 

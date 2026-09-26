@@ -155,13 +155,15 @@ public final class GenerationShieldService implements AutoCloseable {
                 inFlight++;
                 started++;
                 admitted++;
-                future.whenComplete((ignored, error) -> complete(key, error));
+                future.whenComplete((ignored, error) -> generationCompleted(key, error));
             } catch (Exception exception) {
                 outstanding.remove(key);
                 fail("could not start generation for " + key, exception);
                 break;
             }
-            nextAdmissionNanos = saturatingAdd(nextAdmissionNanos, interval);
+            // Never accumulate an idle/catch-up burst. Each admission advances from
+            // the later of the previous deadline or the actual admission time.
+            nextAdmissionNanos = saturatingAdd(Math.max(nextAdmissionNanos, now), interval);
         }
         if (queued == 0) {
             scheduleInitialized = false;
@@ -196,23 +198,43 @@ public final class GenerationShieldService implements AutoCloseable {
         scheduleInitialized = false;
     }
 
-    private synchronized void complete(ChunkKey key, Throwable error) {
+    private void generationCompleted(ChunkKey key, Throwable generationError) {
+        if (generationError != null) {
+            finishFailure(key, "generation failed for " + key, generationError);
+            return;
+        }
+
+        CompletableFuture<Void> durableReady;
+        try {
+            durableReady = Objects.requireNonNull(
+                    readiness.markReady(key), "readiness port returned null future");
+        } catch (RuntimeException exception) {
+            finishFailure(key, "generated chunk could not begin durable readiness commit: " + key, exception);
+            return;
+        }
+        durableReady.whenComplete((ignored, readinessError) -> {
+            if (readinessError != null) {
+                finishFailure(key, "generated chunk could not be marked durably ready: " + key, readinessError);
+            } else {
+                finishSuccess(key);
+            }
+        });
+    }
+
+    private synchronized void finishSuccess(ChunkKey key) {
         if (inFlight > 0) {
             inFlight--;
         }
-        if (error != null) {
-            outstanding.remove(key);
-            fail("generation failed for " + key, error);
-            return;
+        completed++;
+        outstanding.remove(key);
+    }
+
+    private synchronized void finishFailure(ChunkKey key, String message, Throwable error) {
+        if (inFlight > 0) {
+            inFlight--;
         }
-        try {
-            readiness.markReady(key);
-            completed++;
-        } catch (Exception exception) {
-            fail("generated chunk could not be marked ready: " + key, exception);
-        } finally {
-            outstanding.remove(key);
-        }
+        outstanding.remove(key);
+        fail(message, error);
     }
 
     private ChunkKey pollFair() {
