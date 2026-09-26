@@ -81,13 +81,9 @@ public final class GenerationBufferCoordinator {
             while (iterator.hasNext() && checked < maxChecks) {
                 ChunkKey key = iterator.next();
                 checked++;
-                try {
-                    if (readiness.isReady(key)) {
-                        iterator.remove();
-                        pending.unsubmitted().remove(key);
-                    }
-                } catch (Exception exception) {
-                    return;
+                if (readiness.isReady(key)) {
+                    iterator.remove();
+                    pending.unsubmitted().remove(key);
                 }
             }
 
