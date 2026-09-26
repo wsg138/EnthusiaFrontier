@@ -36,15 +36,30 @@ jobs:
         with:
           gradle-version: '8.14.3'
 
-      - name: Build and verify Frontier 0.1.1
+      - name: Build, verify, and reproduce Frontier 0.1.1
         shell: bash
         run: |
           set -euo pipefail
+
           gradle clean check shadowJar --no-daemon
-          mapfile -t jars < <(find build/libs -maxdepth 1 -type f -name 'EnthusiaFrontier-*.jar' | sort)
-          test "${#jars[@]}" -eq 1
-          cp "${jars[0]}" "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar"
-          echo '74b90cafbd96cdbd9a51d07bc897b223161eab87bb7014416d662250442aeefa  '"$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" | sha256sum -c -
+          mapfile -t first_jars < <(find build/libs -maxdepth 1 -type f -name 'EnthusiaFrontier-*.jar' | sort)
+          test "${#first_jars[@]}" -eq 1
+          test -s "${first_jars[0]}"
+          cp "${first_jars[0]}" "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar"
+          FIRST_SHA="$(sha256sum "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" | awk '{print $1}')"
+          printf '%s\n' "$FIRST_SHA" > "$RUNNER_TEMP/frontier.sha256"
+          echo "First build SHA-256: $FIRST_SHA"
+
+          # Rebuild the exact same source from clean outputs. The deployable JAR
+          # must be byte-for-byte reproducible before this workflow may publish it.
+          gradle clean check shadowJar --no-daemon
+          mapfile -t second_jars < <(find build/libs -maxdepth 1 -type f -name 'EnthusiaFrontier-*.jar' | sort)
+          test "${#second_jars[@]}" -eq 1
+          test -s "${second_jars[0]}"
+          SECOND_SHA="$(sha256sum "${second_jars[0]}" | awk '{print $1}')"
+          echo "Second build SHA-256: $SECOND_SHA"
+          test "$FIRST_SHA" = "$SECOND_SHA"
+          cmp --silent "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" "${second_jars[0]}"
 
       - name: Download and verify stable Leaf runtime
         shell: bash
@@ -63,6 +78,7 @@ jobs:
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/EnthusiaFrontier-0.1.1.jar
+            ${{ runner.temp }}/frontier.sha256
             ${{ runner.temp }}/leaf-1.21.11-179.jar
 
       - name: Commit binaries without overwriting parallel work
@@ -89,10 +105,46 @@ jobs:
             cp "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" server/plugins/EnthusiaFrontier-0.1.1.jar
             cp "$RUNNER_TEMP/leaf-1.21.11-179.jar" server/leaf-1.21.11-179.jar
 
-            echo '74b90cafbd96cdbd9a51d07bc897b223161eab87bb7014416d662250442aeefa  server/plugins/EnthusiaFrontier-0.1.1.jar' | sha256sum -c -
+            EXPECTED_FRONTIER_SHA="$(cat "$RUNNER_TEMP/frontier.sha256")"
+            ACTUAL_FRONTIER_SHA="$(sha256sum server/plugins/EnthusiaFrontier-0.1.1.jar | awk '{print $1}')"
+            test "$EXPECTED_FRONTIER_SHA" = "$ACTUAL_FRONTIER_SHA"
             echo '5da79782215c1a25edcd7c73b3523b7ecb7f4b86dc8a5846a176ed69bc2cd020  server/leaf-1.21.11-179.jar' | sha256sum -c -
 
-            git add -f server/plugins/EnthusiaFrontier-0.1.1.jar server/leaf-1.21.11-179.jar
+            python3 - "$EXPECTED_FRONTIER_SHA" "$GITHUB_SHA" <<'PY'
+          from pathlib import Path
+          import re, sys
+
+          sha, source_commit = sys.argv[1:]
+          manifest = Path('server/BINARY-MANIFEST.yml')
+          text = manifest.read_text()
+          pattern = r'(?m)^  EnthusiaFrontier-0\.1\.1\.jar: [0-9a-f]{64}$'
+          replacement = f'  EnthusiaFrontier-0.1.1.jar: {sha}'
+          text, count = re.subn(pattern, replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('Could not update the Frontier plugin hash in BINARY-MANIFEST.yml')
+
+          begin = '# FRONTIER-PLUGIN-ARTIFACT-BEGIN'
+          end = '# FRONTIER-PLUGIN-ARTIFACT-END'
+          if begin in text:
+              start = text.index(begin)
+              finish = text.index(end, start) + len(end)
+              text = (text[:start].rstrip() + '\n' + text[finish:].lstrip('\n')).rstrip()
+          block = f'''{begin}
+          frontier_plugin_runtime:
+            source_commit: {source_commit}
+            java: 21
+            minecraft: 1.21.11
+            artifact: EnthusiaFrontier-0.1.1.jar
+            sha256: {sha}
+          {end}
+          '''
+          manifest.write_text(text.rstrip() + '\n\n' + block)
+          PY
+
+            git add -f \
+              server/plugins/EnthusiaFrontier-0.1.1.jar \
+              server/leaf-1.21.11-179.jar \
+              server/BINARY-MANIFEST.yml
             if git diff --cached --quiet; then
               echo 'Runtime binaries already match the validated artifacts.'
               exit 0
