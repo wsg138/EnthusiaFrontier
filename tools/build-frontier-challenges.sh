@@ -43,47 +43,59 @@ git config --global --unset-all core.autocrlf || true
     --remapped \
     --output-dir "$WORK/spigot-output"
 )
-SPIGOT_REMAPPED="$(find "$HOME/.m2/repository/org/spigotmc/spigot/1.21.11-R0.1-SNAPSHOT" -maxdepth 1 -type f -name '*-remapped.jar' -print -quit 2>/dev/null || true)"
-if [[ -z "$SPIGOT_REMAPPED" || ! -s "$SPIGOT_REMAPPED" ]]; then
-  echo 'BuildTools did not install its 1.21.11 remapped development JAR into the local Maven repository.' >&2
+
+# UAA 2.8.1 pins Spigot 1.21.11-R0.1-SNAPSHOT, while the current pinned
+# BuildTools build resolves 1.21.11 to R0.2-SNAPSHOT. Consume the exact
+# Mojang-mapped artifact BuildTools actually installed, then stage its bytes
+# outside ~/.m2 before installing a compatibility coordinate for UAA. This
+# avoids mutating the source artifact while also tolerating classifier naming
+# differences between BuildTools revisions.
+SPIGOT_REPO_ROOT="$HOME/.m2/repository/org/spigotmc/spigot"
+SPIGOT_UAA_VERSION='1.21.11-R0.1-SNAPSHOT'
+SPIGOT_SOURCE="$(find "$SPIGOT_REPO_ROOT" -mindepth 2 -maxdepth 2 -type f \
+  -path '*/1.21.11-R0.*-SNAPSHOT/*-remapped-mojang.jar' -print 2>/dev/null | sort -V | tail -1 || true)"
+if [[ -z "$SPIGOT_SOURCE" ]]; then
+  SPIGOT_SOURCE="$(find "$SPIGOT_REPO_ROOT" -mindepth 2 -maxdepth 2 -type f \
+    -path '*/1.21.11-R0.*-SNAPSHOT/*-remapped.jar' -print 2>/dev/null | sort -V | tail -1 || true)"
+fi
+if [[ -z "$SPIGOT_SOURCE" || ! -s "$SPIGOT_SOURCE" ]]; then
+  echo 'BuildTools did not install a Mojang-mapped Spigot 1.21.11 development JAR into the local Maven repository.' >&2
   exit 1
 fi
-# BuildTools #201 currently stores the --remapped Mojang-mapped development JAR
-# with classifier "remapped". UAA 2.8.1 requests the historical documented
-# classifier "remapped-mojang". Never point install-file at the local repository
-# artifact itself: Maven may replace/remove files in that coordinate while it is
-# installing the alias. Stage an immutable copy outside ~/.m2 first, verify that
-# the bytes match, then install that copy under the classifier UAA expects.
+
+SPIGOT_SOURCE_VERSION="$(basename "$(dirname "$SPIGOT_SOURCE")")"
+SPIGOT_SOURCE_SHA256="$(sha256sum "$SPIGOT_SOURCE" | awk '{print $1}')"
 SPIGOT_ALIAS_SOURCE="$WORK/spigot-1.21.11-remapped-mojang-source.jar"
-cp -- "$SPIGOT_REMAPPED" "$SPIGOT_ALIAS_SOURCE"
+cp -- "$SPIGOT_SOURCE" "$SPIGOT_ALIAS_SOURCE"
 if [[ ! -s "$SPIGOT_ALIAS_SOURCE" ]]; then
-  echo 'Could not stage the BuildTools remapped JAR outside the local Maven repository.' >&2
+  echo 'Could not stage the BuildTools Mojang-mapped JAR outside the local Maven repository.' >&2
   exit 1
 fi
-SPIGOT_REMAPPED_SHA256="$(sha256sum "$SPIGOT_REMAPPED" | awk '{print $1}')"
-SPIGOT_ALIAS_SOURCE_SHA256="$(sha256sum "$SPIGOT_ALIAS_SOURCE" | awk '{print $1}')"
-if [[ "$SPIGOT_REMAPPED_SHA256" != "$SPIGOT_ALIAS_SOURCE_SHA256" ]]; then
-  echo 'Staged remapped JAR does not match the exact BuildTools artifact.' >&2
+if [[ "$(sha256sum "$SPIGOT_ALIAS_SOURCE" | awk '{print $1}')" != "$SPIGOT_SOURCE_SHA256" ]]; then
+  echo 'Staged Mojang-mapped JAR does not match the exact BuildTools artifact.' >&2
   exit 1
 fi
-mvn -B --no-transfer-progress org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
-  -Dfile="$SPIGOT_ALIAS_SOURCE" \
-  -DgroupId=org.spigotmc \
-  -DartifactId=spigot \
-  -Dversion=1.21.11-R0.1-SNAPSHOT \
-  -Dpackaging=jar \
-  -Dclassifier=remapped-mojang \
-  -DgeneratePom=false
-SPIGOT_MOJANG="$(find "$HOME/.m2/repository/org/spigotmc/spigot/1.21.11-R0.1-SNAPSHOT" -maxdepth 1 -type f -name '*-remapped-mojang.jar' -print -quit 2>/dev/null || true)"
-if [[ -z "$SPIGOT_MOJANG" || ! -s "$SPIGOT_MOJANG" ]]; then
-  echo 'Could not create the local remapped-mojang classifier alias expected by UAA.' >&2
+
+SPIGOT_MOJANG="$SPIGOT_REPO_ROOT/$SPIGOT_UAA_VERSION/spigot-$SPIGOT_UAA_VERSION-remapped-mojang.jar"
+if [[ "$SPIGOT_SOURCE" != "$SPIGOT_MOJANG" ]]; then
+  mvn -B --no-transfer-progress org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
+    -Dfile="$SPIGOT_ALIAS_SOURCE" \
+    -DgroupId=org.spigotmc \
+    -DartifactId=spigot \
+    -Dversion="$SPIGOT_UAA_VERSION" \
+    -Dpackaging=jar \
+    -Dclassifier=remapped-mojang \
+    -DgeneratePom=true
+fi
+if [[ ! -s "$SPIGOT_MOJANG" ]]; then
+  echo 'Could not create the remapped-mojang compatibility coordinate expected by UAA.' >&2
   exit 1
 fi
-if [[ "$(sha256sum "$SPIGOT_MOJANG" | awk '{print $1}')" != "$SPIGOT_REMAPPED_SHA256" ]]; then
-  echo 'Installed remapped-mojang alias does not match the exact BuildTools remapped JAR.' >&2
+if [[ "$(sha256sum "$SPIGOT_MOJANG" | awk '{print $1}')" != "$SPIGOT_SOURCE_SHA256" ]]; then
+  echo 'Installed UAA compatibility artifact does not match the exact BuildTools Mojang-mapped JAR.' >&2
   exit 1
 fi
-echo "Provisioned $(basename "$SPIGOT_MOJANG") from pinned BuildTools #${BUILDTOOLS_BUILD} output (${SPIGOT_REMAPPED_SHA256})."
+echo "Provisioned $(basename "$SPIGOT_MOJANG") from BuildTools #${BUILDTOOLS_BUILD} ${SPIGOT_SOURCE_VERSION} output (${SPIGOT_SOURCE_SHA256})."
 
 echo '== UltimateAdvancementAPI: pinned 2.8.1 plugin source, 1.21.11 adapter only =='
 git clone --quiet https://github.com/frengor/UltimateAdvancementAPI.git "$WORK/uaa"
