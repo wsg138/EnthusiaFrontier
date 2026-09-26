@@ -32,7 +32,20 @@ jobs:
           java-version: '21'
           cache: maven
       - name: Build, test, and assemble runtime
-        run: bash tools/build-frontier-challenges.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          BUILD_LOG="$RUNNER_TEMP/frontier-challenges-build.log"
+          echo "Capturing full build output in $BUILD_LOG"
+          PS4='+ ${BASH_SOURCE}:${LINENO}: ' bash -x tools/build-frontier-challenges.sh 2>&1 | tee "$BUILD_LOG"
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontier-challenge-build-log-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: ${{ runner.temp }}/frontier-challenges-build.log
       - name: Smoke test on real Leaf 1.21.11
         run: bash tools/smoke-frontier-challenges.sh
       - name: Preserve built runtime before reconciling branch
