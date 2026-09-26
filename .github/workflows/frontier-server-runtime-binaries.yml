@@ -61,6 +61,26 @@ jobs:
           test "$FIRST_SHA" = "$SECOND_SHA"
           cmp --silent "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" "${second_jars[0]}"
 
+      - name: Print SpotBugs findings on failure
+        if: failure()
+        shell: bash
+        run: |
+          if [[ -f build/reports/spotbugs/main.xml ]]; then
+            cat build/reports/spotbugs/main.xml
+          fi
+
+      - name: Upload quality reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontier-quality-reports-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            build/reports/tests/
+            build/reports/jacoco/
+            build/reports/spotbugs/
+
       - name: Download and verify stable Leaf runtime
         shell: bash
         run: |
