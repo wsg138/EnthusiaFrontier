@@ -5,6 +5,7 @@ on:
     branches: [server/frontier-test-runtime]
     paths:
       - 'src/**'
+      - 'tools/smoke-frontier-runtime.sh'
       - 'build.gradle.kts'
       - 'gradle.properties'
       - 'settings.gradle.kts'
@@ -90,6 +91,26 @@ jobs:
             -o "$RUNNER_TEMP/leaf-1.21.11-179.jar"
           echo '5da79782215c1a25edcd7c73b3523b7ecb7f4b86dc8a5846a176ed69bc2cd020  '"$RUNNER_TEMP/leaf-1.21.11-179.jar" | sha256sum -c -
 
+      - name: Boot and restart exact Frontier runtime on Leaf
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tools/smoke-frontier-runtime.sh
+          tools/smoke-frontier-runtime.sh \
+            "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" \
+            "$RUNNER_TEMP/leaf-1.21.11-179.jar"
+
+      - name: Upload Leaf runtime smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontier-leaf-runtime-smoke-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/frontier-runtime-smoke/cycle-*.log
+            ${{ runner.temp }}/frontier-runtime-smoke/*.sha256
+
       - name: Upload exact runtime binaries
         uses: actions/upload-artifact@v4
         with:
@@ -115,9 +136,9 @@ jobs:
             REMOTE=origin/server/frontier-test-runtime
 
             if ! git diff --quiet "$GITHUB_SHA" "$REMOTE" -- \
-              src build.gradle.kts gradle.properties settings.gradle.kts \
+              src tools/smoke-frontier-runtime.sh build.gradle.kts gradle.properties settings.gradle.kts \
               .github/workflows/frontier-server-runtime-binaries.yml; then
-              echo 'Frontier source/build definition changed after this run started; refusing to publish stale binaries.' >&2
+              echo 'Frontier source/runtime validation definition changed after this run started; refusing to publish stale binaries.' >&2
               exit 1
             fi
 
