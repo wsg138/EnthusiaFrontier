@@ -130,7 +130,7 @@ async function main() {
       host,
       port,
       username,
-      version: '1.21.11',
+      version: '26.3',
       auth: 'offline',
     });
     bots.push(bot);
@@ -174,9 +174,6 @@ async function main() {
     }, null, 2));
     console.log(`FRONTIER_REAL_CLIENT_CONNECTED count=${count}`);
 
-    // Setup teleports are guarded by Frontier too. The shell may need to retry while
-    // the destination safety buffer is prepared, so acknowledge only after every
-    // network client has actually observed its start position.
     const positionedDeadline = Date.now() + 60_000;
     while (!bots.every(bot => atStart(bot, startAxis, direction))) {
       if (fatalState.error) {
@@ -259,7 +256,7 @@ async function main() {
         bot.clearControlStates();
         bot.quit('Frontier test complete');
       } catch (_) {
-        // Best-effort disconnect only; the disposable server is still process-isolated.
+        // Best-effort disconnect only; the disposable server is process-isolated.
       }
     }
     await sleep(500);
