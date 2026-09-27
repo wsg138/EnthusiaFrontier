@@ -66,9 +66,11 @@ class GenerationShieldMovementListenerTest {
         GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
         GenerationShieldMovementListener listener = listener(buffers, settings(2, 12));
         World world = world();
+        Location from = location(world, 1, 1);
+        Location to = location(world, 15, 15);
         PlayerMoveEvent event = mock(PlayerMoveEvent.class);
-        when(event.getFrom()).thenReturn(location(world, 1, 1));
-        when(event.getTo()).thenReturn(location(world, 15, 15));
+        when(event.getFrom()).thenReturn(from);
+        when(event.getTo()).thenReturn(to);
 
         listener.onMove(event);
 
@@ -82,10 +84,12 @@ class GenerationShieldMovementListenerTest {
         GenerationShieldMovementListener listener = listener(buffers, settings(2, 12));
         World world = world();
         Player player = player(4, 7, 5);
+        Location from = location(world, 0, 0);
+        Location to = location(world, 160, 0);
         PlayerMoveEvent event = mock(PlayerMoveEvent.class);
         when(event.getPlayer()).thenReturn(player);
-        when(event.getFrom()).thenReturn(location(world, 0, 0));
-        when(event.getTo()).thenReturn(location(world, 160, 0));
+        when(event.getFrom()).thenReturn(from);
+        when(event.getTo()).thenReturn(to);
         when(buffers.prepare("player:" + PLAYER_ID, WORLD_ID.toString(), 10, 0, 9))
                 .thenReturn(GenerationBufferStatus.PENDING);
 
@@ -101,10 +105,12 @@ class GenerationShieldMovementListenerTest {
         GenerationShieldMovementListener listener = listener(buffers, settings(2, 8));
         World world = world();
         Player player = player(9, 9, 9);
+        Location from = location(world, 0, 0);
+        Location to = location(world, 32, 0);
         PlayerMoveEvent event = mock(PlayerMoveEvent.class);
         when(event.getPlayer()).thenReturn(player);
-        when(event.getFrom()).thenReturn(location(world, 0, 0));
-        when(event.getTo()).thenReturn(location(world, 32, 0));
+        when(event.getFrom()).thenReturn(from);
+        when(event.getTo()).thenReturn(to);
 
         listener.onMove(event);
 
@@ -122,9 +128,10 @@ class GenerationShieldMovementListenerTest {
         Entity middle = mock(Entity.class);
         when(root.getPassengers()).thenReturn(List.of(middle));
         when(middle.getPassengers()).thenReturn(List.of(player));
+        Location to = location(world, 80, 96);
         EntityTeleportEvent event = mock(EntityTeleportEvent.class);
         when(event.getEntity()).thenReturn(root);
-        when(event.getTo()).thenReturn(location(world, 80, 96));
+        when(event.getTo()).thenReturn(to);
         when(buffers.prepare("player:" + PLAYER_ID, WORLD_ID.toString(), 5, 6, 6))
                 .thenReturn(GenerationBufferStatus.PENDING);
 
@@ -139,9 +146,10 @@ class GenerationShieldMovementListenerTest {
         GenerationShieldMovementListener listener = listener(buffers, settings(2, 12));
         World world = world();
         Player player = player(4, 4, 4);
+        Location to = location(world, 112, 128);
         PlayerPortalEvent event = mock(PlayerPortalEvent.class);
         when(event.getPlayer()).thenReturn(player);
-        when(event.getTo()).thenReturn(location(world, 112, 128));
+        when(event.getTo()).thenReturn(to);
         when(buffers.prepare("player:" + PLAYER_ID, WORLD_ID.toString(), 7, 8, 6))
                 .thenReturn(GenerationBufferStatus.PENDING);
 
