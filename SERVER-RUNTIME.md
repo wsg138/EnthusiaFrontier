@@ -11,7 +11,7 @@ Runtime baseline:
 - Leaf Secure Seed enabled
 - Overworld `-5000..+5000`
 - Nether `-2500..+2500`
-- End `-2500..+2500`
+- End `-500..+500` (main island only; outer-island region excluded)
 - no pregeneration
 - no obtainable Elytras
 - real one-day Frontier cleanup in the Overworld
