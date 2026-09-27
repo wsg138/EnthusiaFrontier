@@ -17,22 +17,15 @@ function Get-CurrentFrontierHash {
     return $match.Groups[1].Value
 }
 
-function Align-FrontierHashPins {
+function Assert-FrontierHelpersMatchManifest {
     param([string]$ExpectedHash)
-
-    # The runtime-publishing workflow advances the JAR and manifest atomically, but the
-    # older helper scripts still contain the pre-publication hash. Align those local
-    # helper pins with the current workflow-published manifest before validation.
-    $legacyHash = '74b90cafbd96cdbd9a51d07bc897b223161eab87bb7014416d662250442aeefa'
 
     foreach ($name in @('populate-runtime.ps1', 'validate-runtime.ps1')) {
         $path = Join-Path $Root $name
         $text = [System.IO.File]::ReadAllText($path)
-        if (-not $text.Contains($legacyHash) -and -not $text.Contains($ExpectedHash)) {
-            throw "$name does not contain either the known legacy Frontier hash or the current expected hash. Refusing an ambiguous patch."
+        if (-not $text.Contains($ExpectedHash)) {
+            throw "$name is not pinned to the Frontier runtime hash declared by BINARY-MANIFEST.yml. Refusing to prepare Test2."
         }
-        $text = $text.Replace($legacyHash, $ExpectedHash)
-        [System.IO.File]::WriteAllText($path, $text, $Utf8)
     }
 }
 
@@ -46,7 +39,7 @@ function Set-Test2Identity {
 
 $currentHash = Get-CurrentFrontierHash
 Write-Host "Using current Frontier runtime SHA-256: $currentHash"
-Align-FrontierHashPins -ExpectedHash $currentHash
+Assert-FrontierHelpersMatchManifest -ExpectedHash $currentHash
 Set-Test2Identity
 
 & (Join-Path $Root 'populate-runtime.ps1') `
