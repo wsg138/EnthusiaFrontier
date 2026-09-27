@@ -15,10 +15,8 @@ plugins:
   nexo-1.22.1.jar: 8771545bf1d29500641c29733a741f863eccbf7dbf43217691dee8de33d43bac
   PlaceholderAPI-2.12.3.jar: fde03259f5af6938f3c33eeb4d814000a1adabf1d2304ce14970be81f609a437
   TAB-v5.5.0.jar: 829e7ec22bc41069d93b53479a8fe4a335a579c9c5b37a4cf140da176aea65f6
-  EnthusiaTempChallenges-0.2.0-frontier.1.jar: 893bbe3a94f4467f4dc3fc10ef843e0f3ca2b5a9dd174d155ffeef2f995ff2fe
-  EnthusiaAdvancements-1.0.0-frontier.jar: 9733423a2f0fa0bbaa15f7accca8390007e88f50affaff97aa6d0f24f18a1eae
-  UltimateAdvancementAPI-2.8.1.jar: d0e17a0228ceba0b9cb837b321c41678df058a669150eb18a421d674f1152052
-  EnthusiaTags.jar: 8aee3c250bdb66f9cb9641e3a5c2cbdb0336a96fca5afdc0488735bd8af13fe4
+  EnthusiaTempChallenges-0.2.0-frontier.1.jar: 6afc2d898a65248deda8ccf05b0e326d136f27b643550b9e0ce6ac23309d031d
+  EnthusiaTags.jar: bfc5eaf7c7275756d8c9cdc8fdf0496723ef36eceea5cfb2e634b051a0277ef9
 # FRONTIER-PLUGIN-ARTIFACT-BEGIN
 frontier_plugin_runtime:
   source_commit: 5ced1554b46b2f4fdd1c34f5355b6da67923feb9
@@ -30,21 +28,14 @@ frontier_plugin_runtime:
 
 # FRONTIER-CHALLENGE-ARTIFACTS-BEGIN
 challenge_runtime:
-  source_commit: 0717fbd2d4ae8fe57dc0866303c34c6087cf272e
-  java: 21
-  paper_api: 1.21.11-R0.1-SNAPSHOT
+  source_commit: 2028329c24b021c5f7b02d212b70dd2f0624bab0
+  java: 25
+  paper_api: 26.3.build.49-alpha
   sqlite_jdbc: 3.53.4.0
-  luckperms_integration: optional-reflective
-  floodgate_integration: optional-reflective
-  spigot_buildtools_build: 201
-  badgers_advancements_source: 42e901473234f5b69c07d5416565d80addbb197d
-  ultimate_advancement_api: 2.8.1
-  ultimate_advancement_api_source: 67d9576ae5e4ec55701ac653194bb77c5f1e708c
-  ultimate_advancement_api_nms: 1_21_R7
+  luckperms_entitlement: context-free-global
+  advancement_presentation: disabled-until-26.3-compatible
   enthusia_tags_source: 261efb9144216ae86a4a2c8ed406a7f44dcae851
   artifacts:
-    EnthusiaTempChallenges-0.2.0-frontier.1.jar: 893bbe3a94f4467f4dc3fc10ef843e0f3ca2b5a9dd174d155ffeef2f995ff2fe
-    EnthusiaAdvancements-1.0.0-frontier.jar: 9733423a2f0fa0bbaa15f7accca8390007e88f50affaff97aa6d0f24f18a1eae
-    UltimateAdvancementAPI-2.8.1.jar: d0e17a0228ceba0b9cb837b321c41678df058a669150eb18a421d674f1152052
-    EnthusiaTags.jar: 8aee3c250bdb66f9cb9641e3a5c2cbdb0336a96fca5afdc0488735bd8af13fe4
+    EnthusiaTempChallenges-0.2.0-frontier.1.jar: 6afc2d898a65248deda8ccf05b0e326d136f27b643550b9e0ce6ac23309d031d
+    EnthusiaTags.jar: bfc5eaf7c7275756d8c9cdc8fdf0496723ef36eceea5cfb2e634b051a0277ef9
 # FRONTIER-CHALLENGE-ARTIFACTS-END
