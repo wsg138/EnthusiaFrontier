@@ -29,7 +29,7 @@ Use a raw current SMP root as the source for only the approved network dependenc
 .\prepare-test2.ps1 -SourceSmpRoot 'D:\path\to\raw-current-smp' -BackendPort <TEST2_PORT>
 ```
 
-The wrapper resolves the current workflow-published Frontier JAR SHA from `BINARY-MANIFEST.yml`, aligns the older helper hash pins locally, sets the TEMP server identity, runs `populate-runtime.ps1`, and requires the final static validator to pass.
+The wrapper resolves the current workflow-published Frontier JAR SHA from `BINARY-MANIFEST.yml`, requires the populate/validation helpers to already match that exact artifact, sets the TEMP server identity, runs `populate-runtime.ps1`, and requires the final static validator to pass. It does not rewrite deployment logic or hash pins locally.
 
 Do not use the sanitized GitHub server snapshot as `SourceSmpRoot`; private forwarding/Floodgate/LuckPerms/Nexo values are intentionally absent there.
 
