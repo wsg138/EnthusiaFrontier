@@ -45,15 +45,16 @@ Patch the live Velocity and VeloTAB files with `../velocity/apply-temp.ps1` usin
 
 ## First boot
 
-Complete every check in `FIRST-BOOT-CHECKLIST.md`, interpreting the proxy backend name as `TEMP`.
+Complete every check in `FIRST-BOOT-CHECKLIST.md`.
 
 Required before players are admitted:
 
 - Overworld border reports `10000` (±5000)
 - Nether border reports `5000` (±2500)
-- End border reports `5000` (±2500)
+- End border reports `1000` (±500; main island only)
 - reachable natural stronghold is inside the Overworld border
 - End is immediately accessible
+- End gateways cannot provide usable access outside the main-island border
 - Elytra removal works for frames, item entities, and player inventories
 - Java joins through Velocity
 - Bedrock joins through the normal Geyser endpoint with Floodgate identity preserved
