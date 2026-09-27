@@ -67,7 +67,7 @@ Example:
 ```powershell
 .\prepare-test2.ps1 `
   -SourceSmpRoot 'D:\SMP' `
-  -BackendPort 25568
+  -BackendPort <TEST2_BACKEND_PORT>
 ```
 
 A successful preparation ends with `TEST2_TEMP_RUNTIME_READY`. See `TEST2-DEPLOYMENT.md` for the panel memory/JVM settings and deployment sequence.
@@ -82,7 +82,7 @@ Private deployment data is intentionally never committed:
 
 ## Starting
 
-`start.sh` downloads and SHA-256 verifies official Leaf 1.21.11 build 179 if it is absent, then starts the server. The branch runtime-binary workflow also publishes that exact Leaf JAR into `server/` when GitHub Actions is available.
+`start.sh` downloads and SHA-256 verifies official Leaf 1.21.11 build 179 if it is absent, then starts the server with the Test2 32 GB/ZGC JVM defaults unless the panel supplies `JAVA_ARGS`. The branch runtime-binary workflow also publishes that exact Leaf JAR into `server/` when GitHub Actions is available.
 
 Complete `FIRST-BOOT-CHECKLIST.md` before normal players join.
 
