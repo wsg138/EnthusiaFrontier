@@ -3,6 +3,7 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
+$ManifestPath = Join-Path $Root 'BINARY-MANIFEST.yml'
 
 function Require-File([string]$Relative) {
     $path = Join-Path $Root $Relative
@@ -14,34 +15,28 @@ function Check-Hash([string]$Relative, [string]$Expected) {
     $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $Expected.ToLowerInvariant()) { throw "Hash mismatch: $Relative`nExpected $Expected`nActual   $actual" }
 }
-function Get-ChallengeArtifactHashes {
-    $hashFile = Require-File 'PLUGIN-SHA256SUMS.txt'
-    $result = @{}
-    foreach ($line in [System.IO.File]::ReadAllLines($hashFile)) {
-        if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        if ($line -notmatch '^([0-9a-fA-F]{64})\s+(.+)$') { throw "Malformed challenge hash line: $line" }
-        $name = [System.IO.Path]::GetFileName($Matches[2].Trim())
-        $result[$name] = $Matches[1].ToLowerInvariant()
-    }
-    return $result
-}
+
+Require-File 'BINARY-MANIFEST.yml' | Out-Null
+$manifest = [System.IO.File]::ReadAllText($ManifestPath)
+$runtimeMatch = [regex]::Match($manifest, '(?ms)^runtime:\s*\r?\n\s*java:\s*(\d+)\s*\r?\n\s*server:\s*\r?\n\s*file:\s*([^\r\n]+)\s*\r?\n\s*sha256:\s*([0-9a-f]{64})')
+if (-not $runtimeMatch.Success) { throw 'Could not parse runtime block from BINARY-MANIFEST.yml.' }
+$runtimeJava = [int]$runtimeMatch.Groups[1].Value
+$runtimeFile = $runtimeMatch.Groups[2].Value.Trim()
+$runtimeHash = $runtimeMatch.Groups[3].Value
+if ($runtimeJava -ne 25 -or $runtimeFile -ne 'paper-26.3.jar') { throw "Expected Paper 26.3 / Java 25 runtime, found $runtimeFile / Java $runtimeJava" }
+Check-Hash $runtimeFile $runtimeHash
 
 foreach ($relative in @(
     'eula.txt',
     'server.properties',
     'bukkit.yml',
     'spigot.yml',
-    'purpur.yml',
     'config\paper-global.yml',
     'config\paper-world-defaults.yml',
-    'config\leaf-global.yml',
-    'config\gale-global.yml',
-    'config\gale-world-defaults.yml',
     'plugins\PlaceholderAPI\config.yml',
     'plugins\TAB\config.yml',
     'plugins\EnthusiaTempChallenges\config.yml',
     'plugins\EnthusiaTags\config.yml',
-    'plugins\EnthusiaAdvancements\trees\frontier_firsts.conf',
     'world\datapacks\enthusia-frontier-test\pack.mcmeta',
     'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\load.mcfunction',
     'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\tick.mcfunction',
@@ -49,21 +44,17 @@ foreach ($relative in @(
     'world\datapacks\enthusia-frontier-test\data\minecraft\tags\function\tick.json'
 )) { Require-File $relative | Out-Null }
 
-$leaf = [System.IO.File]::ReadAllText((Join-Path $Root 'config\leaf-global.yml'))
-if ($leaf -notmatch '(?s)secure-seed:\s*\r?\n\s*enabled:\s*true') { throw 'Leaf Secure Seed is not enabled.' }
-
 $properties = [System.IO.File]::ReadAllText((Join-Path $Root 'server.properties'))
 if ($properties -notmatch '(?m)^online-mode=false\s*$') { throw 'Backend must remain offline-mode behind Velocity modern forwarding.' }
 if ($properties -notmatch '(?m)^max-world-size=5000\s*$') { throw 'max-world-size must allow the full +/-5000 Overworld.' }
 if ($properties -notmatch '(?m)^initial-enabled-packs=vanilla,file/enthusia-frontier-test\s*$') { throw 'Frontier bootstrap datapack must be explicitly enabled for first world creation.' }
-if ($properties -notmatch '(?m)^feature-level-seed=\s*$') {
-    Write-Warning 'feature-level-seed is populated or missing. Keep the live value private and verify this was intentional.'
-}
+if ($properties -notmatch '(?m)^level-seed=\s*$') { throw 'TEMP template must use a fresh random world seed.' }
+if ($properties -match '(?m)^feature-level-seed=') { throw 'Legacy Leaf Secure Seed property remains in server.properties.' }
 
 $borderFunction = [System.IO.File]::ReadAllText((Join-Path $Root 'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\load.mcfunction'))
 if ($borderFunction -notmatch 'execute in minecraft:overworld run worldborder set 10000(?:\s|$)') { throw 'Overworld border must be 10000 wide (+/-5000).' }
 if ($borderFunction -notmatch 'execute in minecraft:the_nether run worldborder set 5000(?:\s|$)') { throw 'Nether border must be 5000 wide (+/-2500).' }
-if ($borderFunction -notmatch 'execute in minecraft:the_end run worldborder set 1000(?:\s|$)') { throw 'End border must be 1000 wide (+/-500) for main-island-only access.' }
+if ($borderFunction -notmatch 'execute in minecraft:the_end run worldborder set 1000(?:\s|$)') { throw 'End border must be 1000 wide (+/-500).' }
 
 $elytraPolicy = [System.IO.File]::ReadAllText((Join-Path $Root 'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\tick.mcfunction'))
 if ($elytraPolicy -notmatch 'item_frame.*minecraft:elytra') { throw 'No-Elytra policy is missing the End Ship item-frame guard.' }
@@ -86,39 +77,28 @@ foreach ($relative in @('config\paper-global.yml','plugins\LuckPerms\config.yml'
 }
 Require-File 'plugins\floodgate\key.pem' | Out-Null
 
-Check-Hash 'leaf-1.21.11-179.jar' '5da79782215c1a25edcd7c73b3523b7ecb7f4b86dc8a5846a176ed69bc2cd020'
+$pluginMatches = [regex]::Matches($manifest, '(?m)^  ([A-Za-z0-9_.-]+\.jar):\s*([0-9a-f]{64})\s*$')
+if ($pluginMatches.Count -lt 1) { throw 'No deployable plugin hashes found in BINARY-MANIFEST.yml.' }
+foreach ($match in $pluginMatches) { Check-Hash (Join-Path 'plugins' $match.Groups[1].Value) $match.Groups[2].Value }
 
-$known = @{
-    'plugins\EnthusiaFrontier-0.1.1.jar'='4c4e6e6704a8b884c9a7d06544c9295616408dd69b9ec1dba757db308c5aa990'
-    'plugins\CoreProtect-24.1.jar'='a7137839a5b20d993e168381dee22136c4ca77979c9d5627ccbdb7c4058d737f'
-    'plugins\InventoryRollbackPlus-1.8.2.jar'='2caada5cd90e86767466dd67c5f1b9616adafdccfe561da44d84985e9ffac43d'
-    'plugins\EnthusiaPlaytime-3.7.2.jar'='d6d79b11588c9d60ece254798480e83b7c286b1909d138c803db11f6a1ec9344'
-    'plugins\LuckPerms-Bukkit-5.5.53.jar'='fc8d4eccbf11c1e844af4527f018bbfde90c1866a9aba1bf880173a8e644cd59'
-    'plugins\floodgate-spigot.jar'='21570aff9ce17d6983928e8552777760e1ede5050026b04c686b0ae112e6fd7e'
-    'plugins\BedrockWindChargeFix-1.0.0.jar'='ddd4583ed2b3ba9c90a8293936f4cb6ff8b990d4233646de6d80d91528155d8d'
-    'plugins\nexo-1.22.1.jar'='8771545bf1d29500641c29733a741f863eccbf7dbf43217691dee8de33d43bac'
-    'plugins\PlaceholderAPI-2.12.3.jar'='fde03259f5af6938f3c33eeb4d814000a1adabf1d2304ce14970be81f609a437'
-    'plugins\TAB-v5.5.0.jar'='829e7ec22bc41069d93b53479a8fe4a335a579c9c5b37a4cf140da176aea65f6'
+$challengeHashFile = Require-File 'PLUGIN-SHA256SUMS.txt'
+$challengeHashes = @{}
+foreach ($line in [System.IO.File]::ReadAllLines($challengeHashFile)) {
+    if ([string]::IsNullOrWhiteSpace($line)) { continue }
+    if ($line -notmatch '^([0-9a-fA-F]{64})\s+(.+)$') { throw "Malformed challenge hash line: $line" }
+    $challengeHashes[[System.IO.Path]::GetFileName($Matches[2].Trim())] = $Matches[1].ToLowerInvariant()
 }
-foreach ($entry in $known.GetEnumerator()) { Check-Hash $entry.Key $entry.Value }
-
-$challengeArtifacts = Get-ChallengeArtifactHashes
-$requiredChallengeArtifacts = @(
-    'EnthusiaTempChallenges-0.2.0-frontier.1.jar',
-    'EnthusiaAdvancements-1.0.0-frontier.jar',
-    'UltimateAdvancementAPI-2.8.1.jar',
-    'EnthusiaTags.jar'
-)
-foreach ($name in $requiredChallengeArtifacts) {
-    if (-not $challengeArtifacts.ContainsKey($name)) { throw "Challenge hash manifest is missing $name" }
-    Check-Hash ("plugins\" + $name) $challengeArtifacts[$name]
+foreach ($name in @('EnthusiaTempChallenges-0.2.0-frontier.1.jar','EnthusiaTags.jar')) {
+    if (-not $challengeHashes.ContainsKey($name)) { throw "Challenge hash manifest is missing $name" }
+    Check-Hash (Join-Path 'plugins' $name) $challengeHashes[$name]
 }
 
 $plugins = Join-Path $Root 'plugins'
-foreach ($pattern in @('Chunky*.jar','LumaGuilds*.jar','EnthusiaTeleport*.jar')) {
-    if (Get-ChildItem -LiteralPath $plugins -Filter $pattern -File -ErrorAction SilentlyContinue) { throw "Forbidden minimal-server plugin present: $pattern" }
+foreach ($pattern in @('Chunky*.jar','LumaGuilds*.jar','EnthusiaTeleport*.jar','EnthusiaAdvancements*.jar','UltimateAdvancementAPI*.jar')) {
+    if (Get-ChildItem -LiteralPath $plugins -Filter $pattern -File -ErrorAction SilentlyContinue) { throw "Forbidden/unsupported minimal-server plugin present: $pattern" }
 }
+if (Test-Path -LiteralPath (Join-Path $Root 'leaf-1.21.11-179.jar')) { throw 'Legacy Leaf 1.21.11 runtime remains in the package.' }
 
 Write-Host 'TEMP_RUNTIME_READY' -ForegroundColor Green
-Write-Host 'Runtime files, workflow-pinned binary hashes, Secure Seed config, borders, no-Elytra policy and challenge runtime all validate.'
+Write-Host 'Paper 26.3/Java 25 runtime, manifest-pinned plugins, borders, no-Elytra policy and challenge runtime all validate.'
 Write-Host 'Still perform FIRST-BOOT-CHECKLIST.md live checks before admitting players.'
