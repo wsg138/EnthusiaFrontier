@@ -1,7 +1,7 @@
 {
   "pack": {
-    "description": "Enthusia Frontier Test borders",
-    "min_format": [94, 1],
-    "max_format": [94, 1]
+    "description": "Enthusia TEMP borders and no-Elytra policy",
+    "min_format": [121, 0],
+    "max_format": [121, 0]
   }
 }
