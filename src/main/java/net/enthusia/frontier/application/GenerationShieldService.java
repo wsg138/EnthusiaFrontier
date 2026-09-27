@@ -37,6 +37,7 @@ public final class GenerationShieldService implements AutoCloseable {
     private final ArrayDeque<String> requesterOrder = new ArrayDeque<>();
     private final Set<ChunkKey> outstanding = new HashSet<>();
     private final Set<ChunkKey> observationCredits = new HashSet<>();
+    private final Set<ChunkKey> pendingObservations = new HashSet<>();
 
     private GlobalGenerationLimits limits = new GlobalGenerationLimits(0.0, 0);
     private int queued;
@@ -110,6 +111,10 @@ public final class GenerationShieldService implements AutoCloseable {
             rejected++;
             return GenerationAdmission.REJECTED_UNHEALTHY;
         }
+        if (pendingObservations.contains(key)) {
+            deduplicated++;
+            return GenerationAdmission.DEDUPLICATED;
+        }
         if (!outstanding.add(key)) {
             deduplicated++;
             return GenerationAdmission.DEDUPLICATED;
@@ -134,25 +139,28 @@ public final class GenerationShieldService implements AutoCloseable {
 
     /**
      * Accounts for an actual newly generated managed chunk observed by the platform event layer.
-     * The requested chunk of each started admission consumes its one matching credit; every
-     * additional generated chunk creates global debt that future admissions must repay.
+     * Cost is charged immediately, but hot readiness is withheld until the lifecycle-ledger
+     * mutation for this exact observation has durably committed. The requested chunk of each
+     * started admission consumes its one matching credit; every additional generated chunk
+     * creates global debt that future admissions must repay.
      *
-     * @return true when this was the first hot-readiness observation for the managed chunk
+     * @return true only for the first pending observation of a not-yet-ready managed chunk
      */
-    public synchronized boolean observeGenerated(ChunkKey key) {
+    public synchronized boolean observeGenerated(ChunkKey key, CompletableFuture<Void> durableCommit) {
         Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(durableCommit, "durableCommit");
         if (stopped || !managedChunk.test(key)) {
             return false;
         }
-
-        final boolean newlyReady;
         try {
-            newlyReady = readiness.observeReady(key);
-        } catch (RuntimeException exception) {
-            fail("generation readiness observation failed for " + key, exception);
+            if (readiness.isReady(key)) {
+                return false;
+            }
+        } catch (Exception exception) {
+            fail("generation readiness lookup failed for observed " + key, exception);
             return false;
         }
-        if (!newlyReady) {
+        if (!pendingObservations.add(key)) {
             return false;
         }
 
@@ -161,6 +169,7 @@ public final class GenerationShieldService implements AutoCloseable {
         if (!observationCredits.remove(key)) {
             observedDebtChunks += 1.0;
         }
+        durableCommit.whenComplete((ignored, error) -> observedGenerationCommitted(key, error));
         return true;
     }
 
@@ -188,6 +197,10 @@ public final class GenerationShieldService implements AutoCloseable {
             ChunkKey key = pollFair();
             if (key == null) {
                 break;
+            }
+            if (pendingObservations.contains(key)) {
+                outstanding.remove(key);
+                continue;
             }
             try {
                 if (readiness.isReady(key)) {
@@ -251,8 +264,25 @@ public final class GenerationShieldService implements AutoCloseable {
         queuedByRequester.clear();
         requesterOrder.clear();
         observationCredits.clear();
+        pendingObservations.clear();
         queued = 0;
         scheduleInitialized = false;
+    }
+
+    private synchronized void observedGenerationCommitted(ChunkKey key, Throwable durabilityError) {
+        pendingObservations.remove(key);
+        if (durabilityError != null) {
+            fail("generated chunk lifecycle durability failed for " + key, durabilityError);
+            return;
+        }
+        if (stopped) {
+            return;
+        }
+        try {
+            readiness.observeReady(key);
+        } catch (RuntimeException exception) {
+            fail("generation readiness observation failed for " + key, exception);
+        }
     }
 
     private void generationCompleted(ChunkKey key, Throwable generationError) {

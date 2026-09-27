@@ -2,6 +2,7 @@ package net.enthusia.frontier.adapter.bukkit;
 
 import java.util.Objects;
 import net.enthusia.frontier.application.FrontierTrackingService;
+import net.enthusia.frontier.application.GenerationBufferCoordinator;
 import net.enthusia.frontier.domain.ActivityKind;
 import org.bukkit.block.Block;
 import org.bukkit.event.EventHandler;
@@ -17,9 +18,17 @@ import org.bukkit.event.world.ChunkLoadEvent;
 /** Thin Bukkit event adapter. Event handlers only enqueue immutable application mutations. */
 public final class FrontierListener implements Listener {
     private final FrontierTrackingService tracking;
+    private final GenerationBufferCoordinator generationBuffers;
 
     public FrontierListener(FrontierTrackingService tracking) {
+        this(tracking, null);
+    }
+
+    public FrontierListener(
+            FrontierTrackingService tracking,
+            GenerationBufferCoordinator generationBuffers) {
         this.tracking = Objects.requireNonNull(tracking, "tracking");
+        this.generationBuffers = generationBuffers;
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -27,11 +36,22 @@ public final class FrontierListener implements Listener {
         if (!event.isNewChunk()) {
             return;
         }
-        tracking.recordGenerated(
-                event.getWorld().getName(),
-                event.getWorld().getUID(),
-                event.getChunk().getX(),
-                event.getChunk().getZ());
+        if (generationBuffers == null) {
+            tracking.recordGenerated(
+                    event.getWorld().getName(),
+                    event.getWorld().getUID(),
+                    event.getChunk().getX(),
+                    event.getChunk().getZ());
+            return;
+        }
+
+        tracking.recordGeneratedDurably(
+                        event.getWorld().getName(),
+                        event.getWorld().getUID(),
+                        event.getChunk().getX(),
+                        event.getChunk().getZ())
+                .ifPresent(observation -> generationBuffers.observeGenerated(
+                        observation.key(), observation.committed()));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

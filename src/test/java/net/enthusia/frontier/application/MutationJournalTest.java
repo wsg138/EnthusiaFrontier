@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -60,6 +61,41 @@ class MutationJournalTest {
         assertFalse(latch.isTripped());
         assertFalse(journal.isHealthy());
         assertFalse(journal.submit(generated(99)));
+    }
+
+    @Test
+    void durableSubmissionCompletesOnlyAfterItsBatchCommits() throws Exception {
+        BlockingRepository repository = new BlockingRepository();
+        RecordingLatch latch = new RecordingLatch();
+        MutationJournal journal = new MutationJournal(repository, latch, 128, 8, ignored -> { });
+
+        journal.start();
+        CompletableFuture<Void> committed = journal.submitDurable(generated(1));
+        assertTrue(repository.entered.await(2, TimeUnit.SECONDS));
+        assertFalse(committed.isDone());
+
+        repository.release.countDown();
+        committed.get(2, TimeUnit.SECONDS);
+        assertTrue(committed.isDone());
+        assertFalse(committed.isCompletedExceptionally());
+        journal.close();
+    }
+
+    @Test
+    void failedDurableSubmissionSignalsFailureWhileJournalRetriesBatch() throws Exception {
+        RecordingRepository repository = new RecordingRepository();
+        repository.failuresRemaining.set(1);
+        RecordingLatch latch = new RecordingLatch();
+        MutationJournal journal = new MutationJournal(repository, latch, 128, 8, ignored -> { });
+
+        journal.start();
+        CompletableFuture<Void> committed = journal.submitDurable(generated(2));
+
+        assertTrue(await(committed::isCompletedExceptionally, 2_000));
+        assertTrue(latch.isTripped());
+        assertTrue(await(() -> repository.applied.size() == 1, 3_000));
+        assertTrue(repository.applyCalls.get() >= 2);
+        journal.close();
     }
 
     @Test

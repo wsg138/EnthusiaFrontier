@@ -104,10 +104,11 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                     settings.protectionRadiusChunks(),
                     mutationJournal,
                     Clock.systemUTC());
-            getServer().getPluginManager().registerEvents(new FrontierListener(tracking), this);
 
             initializeThrottle();
             initializeGenerationShield(dataFolder);
+            getServer().getPluginManager().registerEvents(
+                    new FrontierListener(tracking, generationBuffers), this);
             initializeCleanup(tracking);
             registerCommand();
             getLogger().info("EnthusiaFrontier enabled for " + settings.worldPolicies().size()

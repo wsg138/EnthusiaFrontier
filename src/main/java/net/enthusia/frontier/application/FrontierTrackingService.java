@@ -4,8 +4,10 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import net.enthusia.frontier.domain.ActivityKind;
 import net.enthusia.frontier.domain.ChunkKey;
@@ -34,15 +36,27 @@ public final class FrontierTrackingService {
     }
 
     public boolean recordGenerated(String worldName, UUID worldUuid, int chunkX, int chunkZ) {
-        CoreBoundaryPolicy policy = worldPolicies.get(worldName);
-        if (policy == null) {
-            return false;
+        FrontierMutation.Generated mutation = generatedMutation(worldName, worldUuid, chunkX, chunkZ);
+        return mutation != null && journal.submit(mutation);
+    }
+
+    /**
+     * Records generated lifecycle state and exposes the exact durable-commit boundary to
+     * generation safety. The returned future is completed by the ledger journal only after
+     * the batch containing this generated mutation has committed.
+     */
+    public Optional<DurableGenerationObservation> recordGeneratedDurably(
+            String worldName,
+            UUID worldUuid,
+            int chunkX,
+            int chunkZ) {
+        FrontierMutation.Generated mutation = generatedMutation(worldName, worldUuid, chunkX, chunkZ);
+        if (mutation == null) {
+            return Optional.empty();
         }
-        ChunkKey key = key(worldUuid, chunkX, chunkZ);
-        if (!policy.isManaged(key)) {
-            return false;
-        }
-        return journal.submit(new FrontierMutation.Generated(key, Instant.now(clock)));
+        return Optional.of(new DurableGenerationObservation(
+                mutation.key(),
+                journal.submitDurable(mutation)));
     }
 
     public int recordActivity(
@@ -83,7 +97,30 @@ public final class FrontierTrackingService {
         return worldPolicies;
     }
 
+    private FrontierMutation.Generated generatedMutation(
+            String worldName,
+            UUID worldUuid,
+            int chunkX,
+            int chunkZ) {
+        CoreBoundaryPolicy policy = worldPolicies.get(worldName);
+        if (policy == null) {
+            return null;
+        }
+        ChunkKey key = key(worldUuid, chunkX, chunkZ);
+        if (!policy.isManaged(key)) {
+            return null;
+        }
+        return new FrontierMutation.Generated(key, Instant.now(clock));
+    }
+
     private static ChunkKey key(UUID worldUuid, int chunkX, int chunkZ) {
         return new ChunkKey(Objects.requireNonNull(worldUuid, "worldUuid").toString(), chunkX, chunkZ);
+    }
+
+    public record DurableGenerationObservation(ChunkKey key, CompletableFuture<Void> committed) {
+        public DurableGenerationObservation {
+            Objects.requireNonNull(key, "key");
+            Objects.requireNonNull(committed, "committed");
+        }
     }
 }

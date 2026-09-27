@@ -4,7 +4,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,11 +24,12 @@ public final class MutationJournal implements AutoCloseable {
 
     private final FrontierRepository repository;
     private final SafetyLatch safetyLatch;
-    private final ArrayBlockingQueue<FrontierMutation> queue;
+    private final ArrayBlockingQueue<JournalEntry> queue;
     private final int batchSize;
     private final Consumer<String> errorSink;
     private final AtomicBoolean accepting = new AtomicBoolean();
     private final AtomicInteger pendingMutations = new AtomicInteger();
+    private final Set<CompletableFuture<Void>> pendingDurable = ConcurrentHashMap.newKeySet();
     private volatile Thread worker;
 
     public MutationJournal(
@@ -56,18 +60,23 @@ public final class MutationJournal implements AutoCloseable {
     }
 
     public boolean submit(FrontierMutation mutation) {
+        return enqueue(Objects.requireNonNull(mutation, "mutation"), null);
+    }
+
+    /**
+     * Submits a mutation and returns a future that completes only after the batch containing
+     * that exact mutation has durably committed. A failed write completes the future
+     * exceptionally immediately even though the journal keeps retrying the batch for data
+     * preservation; the safety latch remains tripped so dependent runtime paths fail closed.
+     */
+    public CompletableFuture<Void> submitDurable(FrontierMutation mutation) {
         Objects.requireNonNull(mutation, "mutation");
-        if (!accepting.get()) {
-            safetyLatch.trip("mutation submitted while ledger journal was not accepting writes");
-            return false;
+        CompletableFuture<Void> committed = new CompletableFuture<>();
+        if (!enqueue(mutation, committed)) {
+            committed.completeExceptionally(
+                    new IllegalStateException("frontier mutation was not accepted for durable commit"));
         }
-        pendingMutations.incrementAndGet();
-        if (!queue.offer(mutation)) {
-            pendingMutations.decrementAndGet();
-            safetyLatch.trip("frontier mutation queue overflow; activity history may be incomplete");
-            return false;
-        }
-        return true;
+        return committed;
     }
 
     public int queueDepth() {
@@ -102,19 +111,43 @@ public final class MutationJournal implements AutoCloseable {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             safetyLatch.trip("interrupted while waiting for frontier ledger shutdown");
+            failPendingDurable(new IllegalStateException("frontier ledger shutdown was interrupted", exception));
         }
         if (currentWorker.isAlive()) {
             safetyLatch.trip("frontier ledger did not drain before shutdown timeout");
+            failPendingDurable(new IllegalStateException("frontier ledger did not drain before shutdown timeout"));
             currentWorker.interrupt();
         }
     }
 
+    private boolean enqueue(FrontierMutation mutation, CompletableFuture<Void> durableCommit) {
+        if (!accepting.get()) {
+            safetyLatch.trip("mutation submitted while ledger journal was not accepting writes");
+            return false;
+        }
+        JournalEntry entry = new JournalEntry(mutation, durableCommit);
+        if (durableCommit != null) {
+            pendingDurable.add(durableCommit);
+        }
+        pendingMutations.incrementAndGet();
+        if (!queue.offer(entry)) {
+            pendingMutations.decrementAndGet();
+            if (durableCommit != null) {
+                pendingDurable.remove(durableCommit);
+            }
+            safetyLatch.trip("frontier mutation queue overflow; activity history may be incomplete");
+            return false;
+        }
+        return true;
+    }
+
     private void runWorker() {
-        List<FrontierMutation> batch = new ArrayList<>(batchSize);
+        List<JournalEntry> batch = new ArrayList<>(batchSize);
+        List<FrontierMutation> mutations = new ArrayList<>(batchSize);
         while (accepting.get() || !queue.isEmpty() || !batch.isEmpty()) {
             if (batch.isEmpty()) {
                 try {
-                    FrontierMutation first = queue.poll(POLL_INTERVAL.toMillis(), TimeUnit.MILLISECONDS);
+                    JournalEntry first = queue.poll(POLL_INTERVAL.toMillis(), TimeUnit.MILLISECONDS);
                     if (first == null) {
                         continue;
                     }
@@ -125,24 +158,65 @@ public final class MutationJournal implements AutoCloseable {
                     if (accepting.get() || !queue.isEmpty()) {
                         safetyLatch.trip("frontier ledger worker interrupted with pending mutations");
                     }
+                    failPendingDurable(new IllegalStateException("frontier ledger worker interrupted", exception));
                     return;
                 }
             }
 
+            mutations.clear();
+            for (JournalEntry entry : batch) {
+                mutations.add(entry.mutation());
+            }
             try {
-                repository.applyBatch(batch);
+                repository.applyBatch(mutations);
                 pendingMutations.addAndGet(-batch.size());
+                for (JournalEntry entry : batch) {
+                    completeDurable(entry, null);
+                }
                 batch.clear();
             } catch (Exception exception) {
                 safetyLatch.trip("frontier ledger durable write failed: " + exception.getClass().getSimpleName());
                 errorSink.accept("Frontier ledger write failed; destructive cleanup is latched unsafe: " + exception);
+                IllegalStateException durabilityFailure = new IllegalStateException(
+                        "frontier ledger durable write failed", exception);
+                for (JournalEntry entry : batch) {
+                    completeDurable(entry, durabilityFailure);
+                }
                 try {
                     TimeUnit.MILLISECONDS.sleep(FAILURE_BACKOFF.toMillis());
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
+                    failPendingDurable(new IllegalStateException(
+                            "frontier ledger retry was interrupted", interrupted));
                     return;
                 }
             }
+        }
+    }
+
+    private void completeDurable(JournalEntry entry, Throwable failure) {
+        CompletableFuture<Void> durableCommit = entry.durableCommit();
+        if (durableCommit == null) {
+            return;
+        }
+        if (failure == null) {
+            durableCommit.complete(null);
+        } else {
+            durableCommit.completeExceptionally(failure);
+        }
+        pendingDurable.remove(durableCommit);
+    }
+
+    private void failPendingDurable(Throwable failure) {
+        for (CompletableFuture<Void> durableCommit : pendingDurable) {
+            durableCommit.completeExceptionally(failure);
+            pendingDurable.remove(durableCommit);
+        }
+    }
+
+    private record JournalEntry(FrontierMutation mutation, CompletableFuture<Void> durableCommit) {
+        private JournalEntry {
+            Objects.requireNonNull(mutation, "mutation");
         }
     }
 }

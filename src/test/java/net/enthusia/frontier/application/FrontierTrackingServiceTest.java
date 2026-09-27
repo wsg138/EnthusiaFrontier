@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import net.enthusia.frontier.domain.ActivityKind;
 import net.enthusia.frontier.domain.ChunkKey;
 import net.enthusia.frontier.domain.CoreBoundaryPolicy;
@@ -41,6 +42,26 @@ class FrontierTrackingServiceTest {
         assertEquals(2, generated.key().x());
         assertEquals(NOW, generated.observedAt());
         assertEquals(1, service.worldPolicies().size());
+    }
+
+    @Test
+    void durableGenerationObservationCompletesAfterLedgerCommit() throws Exception {
+        RecordingRepository repository = new RecordingRepository();
+        MutationJournal journal = journal(repository);
+        FrontierTrackingService service = new FrontierTrackingService(
+                Map.of("world", new CoreBoundaryPolicy(16)), 0, journal, Clock.fixed(NOW, ZoneOffset.UTC));
+
+        journal.start();
+        assertTrue(service.recordGeneratedDurably("other", WORLD_UUID, 2, 0).isEmpty());
+        FrontierTrackingService.DurableGenerationObservation observation = service
+                .recordGeneratedDurably("world", WORLD_UUID, 2, 0)
+                .orElseThrow();
+        observation.committed().get(2, TimeUnit.SECONDS);
+        journal.close();
+
+        assertEquals(new ChunkKey(WORLD_UUID.toString(), 2, 0), observation.key());
+        assertEquals(1, repository.applied.size());
+        assertEquals(observation.key(), ((FrontierMutation.Generated) repository.applied.get(0)).key());
     }
 
     @Test

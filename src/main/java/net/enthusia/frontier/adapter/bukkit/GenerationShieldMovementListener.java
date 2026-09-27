@@ -9,7 +9,6 @@ import java.util.UUID;
 import net.enthusia.frontier.application.GenerationBufferCoordinator;
 import net.enthusia.frontier.application.GenerationBufferStatus;
 import net.enthusia.frontier.config.GenerationShieldSettings;
-import net.enthusia.frontier.domain.ChunkKey;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -25,7 +24,6 @@ import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
-import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -54,17 +52,6 @@ public final class GenerationShieldMovementListener implements Listener {
         this.buffers = Objects.requireNonNull(buffers, "buffers");
         this.settings = Objects.requireNonNull(settings, "settings");
         this.managedWorlds = Set.copyOf(Objects.requireNonNull(managedWorlds, "managedWorlds"));
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onChunkLoad(ChunkLoadEvent event) {
-        if (!event.isNewChunk() || !managedWorlds.contains(event.getWorld().getUID())) {
-            return;
-        }
-        buffers.observeGenerated(new ChunkKey(
-                event.getWorld().getUID().toString(),
-                event.getChunk().getX(),
-                event.getChunk().getZ()));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

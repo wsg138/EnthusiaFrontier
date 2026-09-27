@@ -1,6 +1,7 @@
 package net.enthusia.frontier.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -64,13 +65,19 @@ class GenerationBufferCoordinatorTest {
     }
 
     @Test
-    void observedGeneratedChunkBecomesReadyWithoutResubmission() {
+    void observedGeneratedChunkWaitsForDurabilityThenBecomesReadyWithoutResubmission() {
         Harness harness = new Harness(64);
         GenerationBufferCoordinator coordinator = new GenerationBufferCoordinator(harness.shield, harness.readiness);
         ChunkKey observed = key(6, 6);
+        CompletableFuture<Void> lifecycleCommit = new CompletableFuture<>();
         assertEquals(GenerationBufferStatus.PENDING, coordinator.prepare("player", WORLD, 6, 6, 0));
 
-        assertTrue(coordinator.observeGenerated(observed));
+        assertTrue(coordinator.observeGenerated(observed, lifecycleCommit));
+        coordinator.refresh(4);
+        assertFalse(harness.readiness.ready.contains(observed));
+        assertEquals(1, coordinator.pendingBuffers());
+
+        lifecycleCommit.complete(null);
         coordinator.refresh(4);
 
         assertEquals(0, coordinator.pendingBuffers());

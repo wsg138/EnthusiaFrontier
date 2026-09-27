@@ -148,9 +148,9 @@ class GenerationShieldServiceTest {
 
         assertEquals(GenerationAdmission.QUEUED, harness.service.request("a", requested));
         assertEquals(1, harness.service.pump());
-        assertTrue(harness.service.observeGenerated(requested));
-        assertTrue(harness.service.observeGenerated(collateral));
-        assertFalse(harness.service.observeGenerated(collateral));
+        assertTrue(harness.service.observeGenerated(requested, committed()));
+        assertTrue(harness.service.observeGenerated(collateral, committed()));
+        assertFalse(harness.service.observeGenerated(collateral, committed()));
         harness.generation.complete(requested);
 
         GenerationShieldMetrics metrics = harness.service.metrics();
@@ -167,6 +167,40 @@ class GenerationShieldServiceTest {
     }
 
     @Test
+    void observedCollateralWaitsForLifecycleDurabilityBeforeReadiness() {
+        Harness harness = new Harness(8, true);
+        harness.service.setLimits(new GlobalGenerationLimits(4.0, 4));
+        ChunkKey collateral = key(5, 9);
+        CompletableFuture<Void> lifecycleCommit = new CompletableFuture<>();
+
+        assertTrue(harness.service.observeGenerated(collateral, lifecycleCommit));
+        assertFalse(harness.readiness.ready.contains(collateral));
+        assertEquals(1, harness.service.metrics().observedGenerated());
+        assertEquals(1.0, harness.service.metrics().observedDebtChunks(), 1.0e-9);
+        assertEquals(GenerationAdmission.DEDUPLICATED,
+                harness.service.request("player", collateral));
+
+        lifecycleCommit.complete(null);
+        assertTrue(harness.readiness.ready.contains(collateral));
+        assertEquals(GenerationAdmission.READY,
+                harness.service.request("player", collateral));
+    }
+
+    @Test
+    void observedLifecycleDurabilityFailureFailsShieldClosed() {
+        Harness harness = new Harness(8, true);
+        CompletableFuture<Void> lifecycleCommit = new CompletableFuture<>();
+        ChunkKey collateral = key(6, 9);
+
+        assertTrue(harness.service.observeGenerated(collateral, lifecycleCommit));
+        lifecycleCommit.completeExceptionally(new IllegalStateException("planned durability failure"));
+
+        assertFalse(harness.service.metrics().healthy());
+        assertFalse(harness.readiness.ready.contains(collateral));
+        assertTrue(harness.failures.stream().anyMatch(message -> message.contains("lifecycle durability failed")));
+    }
+
+    @Test
     void durableReadinessMustFinishBeforeConcurrencySlotIsReleased() {
         Harness harness = new Harness(8, true);
         harness.readiness.deferCommits = true;
@@ -176,7 +210,7 @@ class GenerationShieldServiceTest {
         harness.service.request("a", first);
         harness.service.request("b", second);
         harness.service.pump();
-        assertTrue(harness.service.observeGenerated(first));
+        assertTrue(harness.service.observeGenerated(first, committed()));
         harness.generation.complete(first);
         harness.advanceMillis(10);
 
@@ -201,6 +235,10 @@ class GenerationShieldServiceTest {
         assertEquals(GenerationAdmission.REJECTED_UNHEALTHY,
                 harness.service.request("b", key(2, 7)));
         assertFalse(harness.failures.isEmpty());
+    }
+
+    private static CompletableFuture<Void> committed() {
+        return CompletableFuture.completedFuture(null);
     }
 
     private static ChunkKey key(int x, int z) {

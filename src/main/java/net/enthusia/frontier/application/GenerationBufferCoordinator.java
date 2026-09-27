@@ -6,6 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import net.enthusia.frontier.domain.ChunkKey;
 
 /**
@@ -68,9 +69,11 @@ public final class GenerationBufferCoordinator {
         return GenerationBufferStatus.PENDING;
     }
 
-    /** Records a platform-observed new chunk for hot readiness and generation-cost feedback. */
-    public boolean observeGenerated(ChunkKey key) {
-        return shield.observeGenerated(Objects.requireNonNull(key, "key"));
+    /** Charges observed generation immediately but exposes readiness only after lifecycle durability. */
+    public boolean observeGenerated(ChunkKey key, CompletableFuture<Void> durableCommit) {
+        return shield.observeGenerated(
+                Objects.requireNonNull(key, "key"),
+                Objects.requireNonNull(durableCommit, "durableCommit"));
     }
 
     /** Refreshes pending readiness away from movement events with a bounded check budget. */
