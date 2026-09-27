@@ -7,8 +7,8 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 plugins {
     java
     jacoco
-    id("com.gradleup.shadow") version "8.3.6"
-    id("com.github.spotbugs") version "6.0.10"
+    id("com.gradleup.shadow") version "9.5.1"
+    id("com.github.spotbugs") version "6.5.6"
 }
 
 group = "net.enthusia.frontier"
@@ -89,7 +89,7 @@ configure<SpotBugsExtension> {
     showProgress = true
     effort = Effort.MAX
     reportLevel = Confidence.LOW
-    toolVersion = "4.8.4"
+    toolVersion = "4.10.2"
 }
 
 tasks.withType<SpotBugsTask>().configureEach {
@@ -105,7 +105,7 @@ tasks.withType<SpotBugsTask>().configureEach {
 }
 
 jacoco {
-    toolVersion = "0.8.13"
+    toolVersion = "0.8.15"
 }
 
 // These adapters cannot be exercised honestly in JVM unit tests because their
