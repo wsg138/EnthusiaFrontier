@@ -12,7 +12,7 @@ function applyMineflayer263TeleportPatch() {
 
   const source = fs.readFileSync(physicsFile, 'utf8');
   const oldLine = "      bot._client.write('teleport_confirm', { teleportId })";
-  const patchedBlock = `      bot._client.write('teleport_confirm', {
+  const upstreamPatchedBlock = `      bot._client.write('teleport_confirm', {
         teleportId,
         x: pos.x,
         y: pos.y,
@@ -21,7 +21,21 @@ function applyMineflayer263TeleportPatch() {
         xRot: pitch
       })`;
 
-  if (source.includes(patchedBlock)) {
+  // @wp2508/mineflayer 4.42.2 now carries its own 26.3 implementation. It
+  // gates the widened acknowledgement on protocol 777 and names the resolved
+  // rotation values yaw/pitch. Treat that exact shape as already fixed rather
+  // than trying to rewrite a dependency that no longer matches the old source.
+  const forkAlreadyFixed = [
+    "if (bot.protocolVersion >= 777)",
+    "bot._client.write('teleport_confirm', {",
+    'x: pos.x',
+    'y: pos.y',
+    'z: pos.z',
+    'yaw: newYaw',
+    'pitch: newPitch'
+  ].every(token => source.includes(token));
+
+  if (forkAlreadyFixed || source.includes(upstreamPatchedBlock)) {
     console.log('MINEFLAYER_26_3_TELEPORT_PATCH already-present');
     return;
   }
@@ -31,16 +45,15 @@ function applyMineflayer263TeleportPatch() {
     throw new Error(`Refusing to patch unexpected Mineflayer physics source; expected one legacy teleport_confirm write, found ${occurrences}`);
   }
 
-  fs.writeFileSync(physicsFile, source.replace(oldLine, patchedBlock));
+  fs.writeFileSync(physicsFile, source.replace(oldLine, upstreamPatchedBlock));
   console.log('MINEFLAYER_26_3_TELEPORT_PATCH applied upstream=PrismarineJS/mineflayer@741ddeb9b707000b6103bd23361c34fc39f82c68');
 }
 
 // The pinned @wp2508/mineflayer 4.42.2 fork supplies Minecraft 26.3 protocol
-// data, but it predates the upstream 26.3 accept_teleportation fix. Minecraft
-// 26.3 requires teleport_confirm to echo the resolved position/rotation; sending
-// only teleportId serializes the new fields as NaN and Paper rejects the client.
-// Apply the exact upstream 741ddeb payload to the disposable test dependency
-// before Mineflayer loads. This never modifies a production server artifact.
+// data. Some published revisions include the 26.3 teleport acknowledgement fix
+// directly; older compatible revisions need the exact upstream 741ddeb payload.
+// Verify one of those known-good shapes before Mineflayer loads and fail closed
+// for anything unexpected. This never modifies a production server artifact.
 applyMineflayer263TeleportPatch();
 const mineflayer = require('mineflayer');
 
