@@ -17,7 +17,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.World;
 
 /**
- * Paper/Leaf 1.21.11 Moonrise storage adapter.
+ * Paper Moonrise MCA storage adapter.
  *
  * <p>Logical deletion uses Moonrise's synchronized RegionDataController DELETE path.
  * Physical reclamation is deliberately narrower: only a fully empty MCA container is
@@ -86,7 +86,7 @@ public final class MoonriseStorageReclaimAdapter implements StorageReclaimPort {
 
     @Override
     public String adapterName() {
-        return "moonrise-mca-1.21.11";
+        return "moonrise-mca-paper";
     }
 
     @Override
