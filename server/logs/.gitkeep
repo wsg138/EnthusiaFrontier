@@ -1,0 +1,1 @@
+# Keep the logs directory present for -Xlog:gc*:logs/gc-zgc.log on a fresh Test2 deployment.
