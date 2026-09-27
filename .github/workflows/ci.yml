@@ -20,7 +20,7 @@ jobs:
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.14.3'
+          gradle-version: '9.2.1'
       - name: Compile, test, analyze, package
         run: gradle clean check shadowJar --no-daemon
       - name: Print SpotBugs findings on failure
