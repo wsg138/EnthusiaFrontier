@@ -100,11 +100,17 @@ public final class SqliteGenerationReadinessAdapter implements GenerationReadine
     }
 
     @Override
+    public boolean observeReady(ChunkKey key) {
+        Objects.requireNonNull(key, "key");
+        return cacheReady(key);
+    }
+
+    @Override
     public CompletableFuture<Void> markReady(ChunkKey key) {
         Objects.requireNonNull(key, "key");
-        if (isReady(key)) {
-            return CompletableFuture.completedFuture(null);
-        }
+        // Always perform the durable upsert. A ChunkLoadEvent may already have placed the
+        // chunk in the hot cache, but GenerationShieldService must not release its in-flight
+        // slot until the requested chunk itself is durably represented.
         return CompletableFuture.runAsync(() -> {
             try {
                 persistReady(key);
@@ -189,8 +195,8 @@ public final class SqliteGenerationReadinessAdapter implements GenerationReadine
         statement.setLong(4, observedAt.toEpochMilli());
     }
 
-    private void cacheReady(ChunkKey key) {
-        readyByWorld.computeIfAbsent(key.worldUuid(), ignored -> ConcurrentHashMap.newKeySet())
+    private boolean cacheReady(ChunkKey key) {
+        return readyByWorld.computeIfAbsent(key.worldUuid(), ignored -> ConcurrentHashMap.newKeySet())
                 .add(pack(key.x(), key.z()));
     }
 

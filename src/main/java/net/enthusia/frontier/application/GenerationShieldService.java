@@ -19,11 +19,12 @@ import net.enthusia.frontier.domain.GlobalGenerationLimits;
  *
  * <p>The queue is requester-fair, chunk requests are globally deduplicated, and
  * rate/concurrency limits apply once to the entire server rather than once per player.
- * The service performs no sleeps; callers drive {@link #pump()} from a scheduler and
- * tests inject a deterministic monotonic clock.</p>
+ * Actual newly generated managed chunks also feed a global debt budget so dependency
+ * generation cannot multiply the effective chunks-per-second ceiling.</p>
  */
 public final class GenerationShieldService implements AutoCloseable {
     private static final long NANOS_PER_SECOND = 1_000_000_000L;
+    private static final double DEBT_EPSILON = 1.0e-9;
 
     private final int queueCapacity;
     private final Predicate<ChunkKey> managedChunk;
@@ -35,6 +36,7 @@ public final class GenerationShieldService implements AutoCloseable {
     private final Map<String, ArrayDeque<ChunkKey>> queuedByRequester = new HashMap<>();
     private final ArrayDeque<String> requesterOrder = new ArrayDeque<>();
     private final Set<ChunkKey> outstanding = new HashSet<>();
+    private final Set<ChunkKey> observationCredits = new HashSet<>();
 
     private GlobalGenerationLimits limits = new GlobalGenerationLimits(0.0, 0);
     private int queued;
@@ -43,6 +45,10 @@ public final class GenerationShieldService implements AutoCloseable {
     private long completed;
     private long rejected;
     private long deduplicated;
+    private long observedGenerated;
+    private double observedDebtChunks;
+    private long debtUpdatedNanos;
+    private boolean debtClockInitialized;
     private long nextAdmissionNanos;
     private boolean scheduleInitialized;
     private boolean failed;
@@ -70,6 +76,7 @@ public final class GenerationShieldService implements AutoCloseable {
 
     public synchronized void setLimits(GlobalGenerationLimits newLimits) {
         Objects.requireNonNull(newLimits, "newLimits");
+        recoverObservedDebt(nanoTime.getAsLong());
         boolean wasPaused = limits.paused();
         limits = newLimits;
         if (wasPaused || newLimits.paused()) {
@@ -87,14 +94,9 @@ public final class GenerationShieldService implements AutoCloseable {
             rejected++;
             return GenerationAdmission.REJECTED_STOPPED;
         }
-        // Permanent-core chunks require no Frontier generation work. Keep that bypass
-        // available even when the generation subsystem has failed closed so normal
-        // movement through already-generated permanent terrain is not frozen.
         if (!managedChunk.test(key)) {
             return GenerationAdmission.CORE_BYPASS;
         }
-        // Known-ready managed chunks are also safe to traverse during a health failure.
-        // Fail closed only when satisfying the request would require new generation.
         try {
             if (readiness.isReady(key)) {
                 return GenerationAdmission.READY;
@@ -130,12 +132,48 @@ public final class GenerationShieldService implements AutoCloseable {
         return GenerationAdmission.QUEUED;
     }
 
-    /** Starts every request currently allowed by the aggregate rate and concurrency budgets. */
+    /**
+     * Accounts for an actual newly generated managed chunk observed by the platform event layer.
+     * The requested chunk of each started admission consumes its one matching credit; every
+     * additional generated chunk creates global debt that future admissions must repay.
+     *
+     * @return true when this was the first hot-readiness observation for the managed chunk
+     */
+    public synchronized boolean observeGenerated(ChunkKey key) {
+        Objects.requireNonNull(key, "key");
+        if (stopped || !managedChunk.test(key)) {
+            return false;
+        }
+
+        final boolean newlyReady;
+        try {
+            newlyReady = readiness.observeReady(key);
+        } catch (RuntimeException exception) {
+            fail("generation readiness observation failed for " + key, exception);
+            return false;
+        }
+        if (!newlyReady) {
+            return false;
+        }
+
+        recoverObservedDebt(nanoTime.getAsLong());
+        observedGenerated++;
+        if (!observationCredits.remove(key)) {
+            observedDebtChunks += 1.0;
+        }
+        return true;
+    }
+
+    /** Starts every request currently allowed by aggregate rate, observed-cost and concurrency budgets. */
     public synchronized int pump() {
         if (stopped || !healthy() || limits.paused() || queued == 0 || inFlight >= limits.maxConcurrent()) {
             return 0;
         }
         long now = nanoTime.getAsLong();
+        recoverObservedDebt(now);
+        if (observedDebtChunks > DEBT_EPSILON) {
+            return 0;
+        }
         if (!scheduleInitialized) {
             nextAdmissionNanos = now;
             scheduleInitialized = true;
@@ -145,6 +183,7 @@ public final class GenerationShieldService implements AutoCloseable {
         while (queued > 0
                 && inFlight < limits.maxConcurrent()
                 && now >= nextAdmissionNanos
+                && observedDebtChunks <= DEBT_EPSILON
                 && healthy()) {
             ChunkKey key = pollFair();
             if (key == null) {
@@ -155,6 +194,10 @@ public final class GenerationShieldService implements AutoCloseable {
                     outstanding.remove(key);
                     continue;
                 }
+                // Install the one-chunk observation credit before entering Paper. If the
+                // platform fires ChunkLoadEvent re-entrantly or on another thread, the
+                // requested chunk is still distinguished from collateral generation.
+                observationCredits.add(key);
                 CompletableFuture<Void> future = Objects.requireNonNull(
                         generation.generate(key), "generation port returned null future");
                 inFlight++;
@@ -162,12 +205,11 @@ public final class GenerationShieldService implements AutoCloseable {
                 admitted++;
                 future.whenComplete((ignored, error) -> generationCompleted(key, error));
             } catch (Exception exception) {
+                observationCredits.remove(key);
                 outstanding.remove(key);
                 fail("could not start generation for " + key, exception);
                 break;
             }
-            // Never accumulate an idle/catch-up burst. Each admission advances from
-            // the later of the previous deadline or the actual admission time.
             nextAdmissionNanos = saturatingAdd(Math.max(nextAdmissionNanos, now), interval);
         }
         if (queued == 0) {
@@ -177,8 +219,17 @@ public final class GenerationShieldService implements AutoCloseable {
     }
 
     public synchronized GenerationShieldMetrics metrics() {
+        recoverObservedDebt(nanoTime.getAsLong());
         return new GenerationShieldMetrics(
-                queued, inFlight, started, completed, rejected, deduplicated, healthy());
+                queued,
+                inFlight,
+                started,
+                completed,
+                rejected,
+                deduplicated,
+                observedGenerated,
+                observedDebtChunks,
+                healthy());
     }
 
     public synchronized GlobalGenerationLimits limits() {
@@ -199,6 +250,7 @@ public final class GenerationShieldService implements AutoCloseable {
         }
         queuedByRequester.clear();
         requesterOrder.clear();
+        observationCredits.clear();
         queued = 0;
         scheduleInitialized = false;
     }
@@ -227,6 +279,7 @@ public final class GenerationShieldService implements AutoCloseable {
     }
 
     private synchronized void finishSuccess(ChunkKey key) {
+        observationCredits.remove(key);
         if (inFlight > 0) {
             inFlight--;
         }
@@ -235,11 +288,33 @@ public final class GenerationShieldService implements AutoCloseable {
     }
 
     private synchronized void finishFailure(ChunkKey key, String message, Throwable error) {
+        observationCredits.remove(key);
         if (inFlight > 0) {
             inFlight--;
         }
         outstanding.remove(key);
         fail(message, error);
+    }
+
+    private void recoverObservedDebt(long now) {
+        if (!debtClockInitialized) {
+            debtUpdatedNanos = now;
+            debtClockInitialized = true;
+            return;
+        }
+        if (now <= debtUpdatedNanos) {
+            return;
+        }
+        if (observedDebtChunks > 0.0 && limits.chunksPerSecond() > 0.0) {
+            double elapsedSeconds = (now - debtUpdatedNanos) / (double) NANOS_PER_SECOND;
+            observedDebtChunks = Math.max(
+                    0.0,
+                    observedDebtChunks - elapsedSeconds * limits.chunksPerSecond());
+            if (observedDebtChunks < DEBT_EPSILON) {
+                observedDebtChunks = 0.0;
+            }
+        }
+        debtUpdatedNanos = now;
     }
 
     private ChunkKey pollFair() {

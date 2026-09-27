@@ -139,6 +139,34 @@ class GenerationShieldServiceTest {
     }
 
     @Test
+    void observedCollateralGenerationCreatesGlobalDebt() {
+        Harness harness = new Harness(8, true);
+        harness.service.setLimits(new GlobalGenerationLimits(4.0, 4));
+        ChunkKey requested = key(1, 9);
+        ChunkKey collateral = key(2, 9);
+        ChunkKey next = key(3, 9);
+
+        assertEquals(GenerationAdmission.QUEUED, harness.service.request("a", requested));
+        assertEquals(1, harness.service.pump());
+        assertTrue(harness.service.observeGenerated(requested));
+        assertTrue(harness.service.observeGenerated(collateral));
+        assertFalse(harness.service.observeGenerated(collateral));
+        harness.generation.complete(requested);
+
+        GenerationShieldMetrics metrics = harness.service.metrics();
+        assertEquals(2, metrics.observedGenerated());
+        assertEquals(1.0, metrics.observedDebtChunks(), 1.0e-9);
+        assertEquals(GenerationAdmission.QUEUED, harness.service.request("b", next));
+
+        harness.advanceMillis(249);
+        assertEquals(0, harness.service.pump());
+        assertTrue(harness.service.metrics().observedDebtChunks() > 0.0);
+        harness.advanceMillis(1);
+        assertEquals(1, harness.service.pump());
+        assertEquals(0.0, harness.service.metrics().observedDebtChunks(), 1.0e-9);
+    }
+
+    @Test
     void durableReadinessMustFinishBeforeConcurrencySlotIsReleased() {
         Harness harness = new Harness(8, true);
         harness.readiness.deferCommits = true;
@@ -148,6 +176,7 @@ class GenerationShieldServiceTest {
         harness.service.request("a", first);
         harness.service.request("b", second);
         harness.service.pump();
+        assertTrue(harness.service.observeGenerated(first));
         harness.generation.complete(first);
         harness.advanceMillis(10);
 
@@ -210,6 +239,11 @@ class GenerationShieldServiceTest {
         @Override
         public boolean isReady(ChunkKey key) {
             return ready.contains(key);
+        }
+
+        @Override
+        public boolean observeReady(ChunkKey key) {
+            return ready.add(key);
         }
 
         @Override

@@ -8,5 +8,7 @@ public record GenerationShieldMetrics(
         long completed,
         long rejected,
         long deduplicated,
+        long observedGenerated,
+        double observedDebtChunks,
         boolean healthy) {
 }

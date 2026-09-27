@@ -64,6 +64,20 @@ class GenerationBufferCoordinatorTest {
     }
 
     @Test
+    void observedGeneratedChunkBecomesReadyWithoutResubmission() {
+        Harness harness = new Harness(64);
+        GenerationBufferCoordinator coordinator = new GenerationBufferCoordinator(harness.shield, harness.readiness);
+        ChunkKey observed = key(6, 6);
+        assertEquals(GenerationBufferStatus.PENDING, coordinator.prepare("player", WORLD, 6, 6, 0));
+
+        assertTrue(coordinator.observeGenerated(observed));
+        coordinator.refresh(4);
+
+        assertEquals(0, coordinator.pendingBuffers());
+        assertEquals(GenerationBufferStatus.READY, coordinator.prepare("player", WORLD, 6, 6, 0));
+    }
+
+    @Test
     void unhealthyShieldFailsClosedAndRequesterCanBeRemoved() {
         Harness harness = new Harness(64);
         GenerationBufferCoordinator coordinator = new GenerationBufferCoordinator(harness.shield, harness.readiness);
@@ -166,6 +180,11 @@ class GenerationBufferCoordinatorTest {
         @Override
         public boolean isReady(ChunkKey key) {
             return ready.contains(key);
+        }
+
+        @Override
+        public boolean observeReady(ChunkKey key) {
+            return ready.add(key);
         }
 
         @Override

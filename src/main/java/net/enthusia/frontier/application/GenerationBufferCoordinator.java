@@ -43,12 +43,9 @@ public final class GenerationBufferCoordinator {
         BufferCenter center = new BufferCenter(worldUuid, centerX, centerZ, radius);
         PendingBuffer existing = byRequester.get(requesterId);
         if (existing != null && existing.center().equals(center)) {
-            if (existing.missing().isEmpty()) {
-                return GenerationBufferStatus.READY;
-            }
-            return shield.healthy()
-                    ? GenerationBufferStatus.PENDING
-                    : GenerationBufferStatus.FAIL_CLOSED;
+            return existing.missing().isEmpty()
+                    ? GenerationBufferStatus.READY
+                    : GenerationBufferStatus.PENDING;
         }
 
         PendingBuffer pending = new PendingBuffer(center, new LinkedHashSet<>(), new LinkedHashSet<>());
@@ -57,16 +54,23 @@ public final class GenerationBufferCoordinator {
             for (int deltaZ = -radius; deltaZ <= radius; deltaZ++) {
                 ChunkKey key = new ChunkKey(worldUuid, centerX + deltaX, centerZ + deltaZ);
                 if (!submitOrResolve(requesterId, pending, key)) {
-                    // Never retain a partially evaluated square as a valid cached center.
-                    // On recovery the next prepare call must rescan the whole buffer.
-                    byRequester.remove(requesterId, pending);
+                    // Never retain a partially evaluated buffer. A later recovery must
+                    // revalidate the complete square instead of trusting partial state.
+                    byRequester.remove(requesterId);
                     return GenerationBufferStatus.FAIL_CLOSED;
                 }
             }
         }
-        return pending.missing().isEmpty()
-                ? GenerationBufferStatus.READY
-                : GenerationBufferStatus.PENDING;
+        if (pending.missing().isEmpty()) {
+            byRequester.remove(requesterId);
+            return GenerationBufferStatus.READY;
+        }
+        return GenerationBufferStatus.PENDING;
+    }
+
+    /** Records a platform-observed new chunk for hot readiness and generation-cost feedback. */
+    public boolean observeGenerated(ChunkKey key) {
+        return shield.observeGenerated(Objects.requireNonNull(key, "key"));
     }
 
     /** Refreshes pending readiness away from movement events with a bounded check budget. */
@@ -75,10 +79,9 @@ public final class GenerationBufferCoordinator {
             throw new IllegalArgumentException("maxChecks must be >= 1");
         }
         int checked = 0;
-        for (Map.Entry<String, PendingBuffer> entry : byRequester.entrySet()) {
-            if (checked >= maxChecks || !shield.healthy()) {
-                return;
-            }
+        Iterator<Map.Entry<String, PendingBuffer>> buffers = byRequester.entrySet().iterator();
+        while (buffers.hasNext() && checked < maxChecks) {
+            Map.Entry<String, PendingBuffer> entry = buffers.next();
             PendingBuffer pending = entry.getValue();
             Iterator<ChunkKey> iterator = pending.missing().iterator();
             while (iterator.hasNext() && checked < maxChecks) {
@@ -96,7 +99,7 @@ public final class GenerationBufferCoordinator {
                 }
             }
 
-            if (!pending.unsubmitted().isEmpty() && shield.healthy()) {
+            if (!pending.unsubmitted().isEmpty()) {
                 Iterator<ChunkKey> retry = pending.unsubmitted().iterator();
                 while (retry.hasNext() && checked < maxChecks) {
                     ChunkKey key = retry.next();
@@ -113,6 +116,10 @@ public final class GenerationBufferCoordinator {
                         return;
                     }
                 }
+            }
+
+            if (pending.missing().isEmpty()) {
+                buffers.remove();
             }
         }
     }

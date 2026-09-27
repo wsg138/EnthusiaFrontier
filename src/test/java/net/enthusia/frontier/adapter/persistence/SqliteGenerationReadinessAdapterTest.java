@@ -43,6 +43,29 @@ class SqliteGenerationReadinessAdapterTest {
     }
 
     @Test
+    void observedReadinessIsHotButRequestedCommitStillPersists() throws Exception {
+        Path database = initializeSchema();
+        RecordingLatch latch = new RecordingLatch();
+        ChunkKey key = new ChunkKey(WORLD, 8, -4);
+
+        try (SqliteGenerationReadinessAdapter adapter =
+                new SqliteGenerationReadinessAdapter(database, latch, Clock.systemUTC())) {
+            adapter.initialize(List.of(WORLD));
+            assertTrue(adapter.observeReady(key));
+            assertFalse(adapter.observeReady(key));
+            assertTrue(adapter.isReady(key));
+            adapter.markReady(key).join();
+        }
+
+        try (SqliteGenerationReadinessAdapter restarted =
+                new SqliteGenerationReadinessAdapter(database, latch, Clock.systemUTC())) {
+            restarted.initialize(List.of(WORLD));
+            assertTrue(restarted.isReady(key));
+        }
+        assertFalse(latch.isTripped());
+    }
+
+    @Test
     void adoptLoadedPersistsAndForgetInvalidatesHotCache() throws Exception {
         Path database = initializeSchema();
         RecordingLatch latch = new RecordingLatch();
