@@ -96,10 +96,23 @@ async function main() {
   for (let index = 0; index < count; index++) {
     const username = `${prefix}${String(index).padStart(2, '0')}`;
     const bot = mineflayer.createBot({ host, port, username, version: '26.3', auth: 'offline' });
+
+    // The current 26.3 Mineflayer fork can emit malformed/invalid movement packets
+    // from its physics loop even when this harness never requests client movement.
+    // These clients are network observers for server-driven Frontier teleports, so
+    // disable physics synchronously before the connection can reach spawn state.
+    bot.physicsEnabled = false;
+    bot.clearControlStates();
+
     bots.push(bot);
     spawned.push(new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`${username} did not spawn within 45 seconds`)), 45_000);
-      bot.once('spawn', () => { clearTimeout(timer); resolve(); });
+      bot.once('spawn', () => {
+        bot.physicsEnabled = false;
+        bot.clearControlStates();
+        clearTimeout(timer);
+        resolve();
+      });
       bot.once('error', error => { clearTimeout(timer); reject(new Error(`${username} client error before spawn: ${error.message}`)); });
       bot.once('kicked', reason => { clearTimeout(timer); reject(new Error(`${username} was kicked before spawn: ${JSON.stringify(reason)}`)); });
     }));
