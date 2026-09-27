@@ -126,9 +126,9 @@ jobs:
             --no-save \
             --package-lock=false \
             --ignore-scripts \
-            'mineflayer@npm:@wp2508/mineflayer@4.42.2'
+            'github:PrismarineJS/mineflayer#741ddeb9b707000b6103bd23361c34fc39f82c68'
           NODE_PATH="$RUNNER_TEMP/frontier-mineflayer/node_modules" \
-            node -e "const p=require('mineflayer/package.json'); if (p.version !== '4.42.2') process.exit(1);"
+            node -e "const p=require('mineflayer/package.json'); if (p.version !== '4.39.0') process.exit(1);"
 
       - name: Boot and restart exact Frontier runtime on Paper 26.3
         shell: bash
