@@ -104,17 +104,16 @@ async function main() {
       physicsEnabled: false,
     });
 
-    // These are network observers for guarded server teleports. Keep physics
-    // disabled explicitly as well so a plugin/fork default cannot re-enable it.
+    // These clients only observe server-driven Frontier teleports. The 26.3
+    // Mineflayer fork does not expose clearControlStates(), so keep physics
+    // disabled through its supported flag instead of calling an absent API.
     bot.physicsEnabled = false;
-    bot.clearControlStates();
 
     bots.push(bot);
     spawned.push(new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`${username} did not spawn within 45 seconds`)), 45_000);
       bot.once('spawn', () => {
         bot.physicsEnabled = false;
-        bot.clearControlStates();
         clearTimeout(timer);
         resolve();
       });
