@@ -57,6 +57,10 @@ function axisPosition(bot, direction) {
     : bot.entity.position.z;
 }
 
+function atStart(bot, startAxis, direction) {
+  return Math.abs(axisPosition(bot, direction) - startAxis) <= 12;
+}
+
 function reached(position, target, direction) {
   return direction === 'east' || direction === 'south'
     ? position >= target
@@ -76,6 +80,17 @@ function lookTarget(bot, direction) {
     default:
       throw new Error(`unsupported direction ${direction}`);
   }
+}
+
+function positions(bots) {
+  return bots
+    .filter(bot => bot.entity)
+    .map(bot => ({
+      username: bot.username,
+      x: bot.entity.position.x,
+      y: bot.entity.position.y,
+      z: bot.entity.position.z,
+    }));
 }
 
 async function main() {
@@ -101,6 +116,7 @@ async function main() {
 
   fs.mkdirSync(markerDir, { recursive: true });
   const connectedFile = path.join(markerDir, 'connected.json');
+  const positionedFile = path.join(markerDir, 'positioned.json');
   const goFile = path.join(markerDir, 'go');
   const resultFile = path.join(markerDir, 'result.json');
   const bots = [];
@@ -158,11 +174,32 @@ async function main() {
     }, null, 2));
     console.log(`FRONTIER_REAL_CLIENT_CONNECTED count=${count}`);
 
+    // Setup teleports are guarded by Frontier too. The shell may need to retry while
+    // the destination safety buffer is prepared, so acknowledge only after every
+    // network client has actually observed its start position.
+    const positionedDeadline = Date.now() + 60_000;
+    while (!bots.every(bot => atStart(bot, startAxis, direction))) {
+      if (fatalState.error) {
+        throw fatalState.error;
+      }
+      if (Date.now() >= positionedDeadline) {
+        const observed = bots.map(bot => `${bot.username}=${axisPosition(bot, direction).toFixed(2)}`).join(',');
+        throw new Error(`clients did not reach setup axis ${startAxis}; positions=${observed}`);
+      }
+      await sleep(50);
+    }
+    fs.writeFileSync(positionedFile, JSON.stringify({
+      count,
+      start_axis: startAxis,
+      positions: positions(bots),
+    }, null, 2));
+    console.log(`FRONTIER_REAL_CLIENT_POSITIONED count=${count}`);
+
     await waitForFile(goFile, 60_000, fatalState);
     for (const bot of bots) {
       const observed = axisPosition(bot, direction);
       if (Math.abs(observed - startAxis) > 12) {
-        throw new Error(`${bot.username} was not at the expected start axis: ${observed.toFixed(3)} vs ${startAxis}`);
+        throw new Error(`${bot.username} moved away from the expected start axis: ${observed.toFixed(3)} vs ${startAxis}`);
       }
     }
 
@@ -182,8 +219,8 @@ async function main() {
         break;
       }
       if (Date.now() >= deadline) {
-        const positions = bots.map(bot => `${bot.username}=${axisPosition(bot, direction).toFixed(2)}`).join(',');
-        throw new Error(`movement timed out; positions=${positions}`);
+        const observed = bots.map(bot => `${bot.username}=${axisPosition(bot, direction).toFixed(2)}`).join(',');
+        throw new Error(`movement timed out; positions=${observed}`);
       }
       await sleep(100);
     }
@@ -200,12 +237,7 @@ async function main() {
       elapsed_ms: elapsedMs,
       start_axis: startAxis,
       target_axis: targetAxis,
-      positions: bots.map(bot => ({
-        username: bot.username,
-        x: bot.entity.position.x,
-        y: bot.entity.position.y,
-        z: bot.entity.position.z,
-      })),
+      positions: positions(bots),
     };
     fs.writeFileSync(resultFile, JSON.stringify(result, null, 2));
     console.log(`FRONTIER_REAL_CLIENT_REACHED count=${count} elapsed_ms=${elapsedMs.toFixed(1)}`);
@@ -216,9 +248,7 @@ async function main() {
       count,
       direction,
       error: message,
-      positions: bots
-        .filter(bot => bot.entity)
-        .map(bot => ({ username: bot.username, x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z })),
+      positions: positions(bots),
     }, null, 2));
     console.error(`FRONTIER_REAL_CLIENT_FAILED count=${count} reason=${message}`);
     process.exitCode = 1;

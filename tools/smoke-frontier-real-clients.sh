@@ -11,6 +11,7 @@ PORT=25590
 MAX_RATE=8.0
 MAX_CONCURRENT=4
 MINEFLAYER_VERSION=4.37.1
+CLIENT_TIMEOUT_MS=600000
 
 rm -rf "$SMOKE"
 mkdir -p "$SERVER/plugins/EnthusiaFrontier"
@@ -34,7 +35,7 @@ margin = "  extra-guard-radius-chunks: 2"
 if text.count(margin) != 1:
     raise SystemExit("could not identify the validated Moonrise generation-shield guard margin")
 # Keep the exact minimum validated for Moonrise 1.21.11. With API view/simulation
-# distance 2, Moonrise's load/dependency footprint and Frontier's guard are radius 4.
+# distance 2, Moonrise's load/dependency footprint is at least radius 4.
 path.write_text(text)
 PY
 
@@ -127,7 +128,6 @@ if [[ "$started" != true ]]; then
 fi
 
 grep -q 'EnthusiaFrontier enabled for 1 world(s); generation-shield=global-paper-async' "$SERVER_LOG"
-printf 'gamerule maxEntityCramming 0\n' >&"$CONSOLE_FD"
 printf 'frontier status\n' >&"$CONSOLE_FD"
 sleep 2
 
@@ -153,8 +153,6 @@ run_case() {
   local target_axis="$5"
   local case_dir="$SMOKE/case-$count"
   mkdir -p "$case_dir"
-  local before
-  before="$(count_ready)"
 
   node "$ROOT/tools/frontier-real-client-load.js" \
     --host 127.0.0.1 \
@@ -165,7 +163,7 @@ run_case() {
     --marker-dir "$case_dir" \
     --start-axis "$start_axis" \
     --target-axis "$target_axis" \
-    --timeout-ms 240000 \
+    --timeout-ms "$CLIENT_TIMEOUT_MS" \
     >"$case_dir/client.log" 2>&1 &
   local client_pid=$!
 
@@ -189,28 +187,55 @@ run_case() {
     return 1
   fi
 
-  local index lane username x z
-  for ((index = 0; index < count; index++)); do
-    lane=$(( (2 * index - (count - 1)) * 192 ))
-    username="${prefix}$(printf '%02d' "$index")"
-    case "$direction" in
-      east|west)
-        x="$start_axis"
-        z="$lane"
-        ;;
-      north|south)
-        x="$lane"
-        z="$start_axis"
-        ;;
-      *)
-        echo "Unsupported direction: $direction" >&2
-        return 1
-        ;;
-    esac
-    printf 'execute as %s at @s run teleport @s %s ~ %s\n' "$username" "$x" "$z" >&"$CONSOLE_FD"
-  done
-  sleep 3
+  # Setup teleports are themselves guarded by Frontier. Retry until every client has
+  # actually observed the intended start position; a pending buffer may legitimately
+  # cancel an earlier teleport. Start far enough inside the permanent core that the
+  # validated maximum runtime guard for this profile does not pre-generate the test edge.
+  local positioned=false
+  for _ in $(seq 1 90); do
+    if [[ -s "$case_dir/positioned.json" ]]; then
+      positioned=true
+      break
+    fi
+    if ! kill -0 "$client_pid" 2>/dev/null; then
+      wait "$client_pid" || true
+      echo "Real-client process exited before all $count clients reached the setup position." >&2
+      return 1
+    fi
 
+    local index lane username x z
+    for ((index = 0; index < count; index++)); do
+      lane=$(( (2 * index - (count - 1)) * 192 ))
+      username="${prefix}$(printf '%02d' "$index")"
+      case "$direction" in
+        east|west)
+          x="$start_axis"
+          z="$lane"
+          ;;
+        north|south)
+          x="$lane"
+          z="$start_axis"
+          ;;
+        *)
+          echo "Unsupported direction: $direction" >&2
+          return 1
+          ;;
+      esac
+      printf 'execute as %s at @s run teleport @s %s ~ %s\n' "$username" "$x" "$z" >&"$CONSOLE_FD"
+    done
+    sleep 1
+  done
+  if [[ "$positioned" != true ]]; then
+    echo "Real-client case $count did not acknowledge its setup position within 90 seconds." >&2
+    kill "$client_pid" 2>/dev/null || true
+    wait "$client_pid" || true
+    return 1
+  fi
+
+  # Exclude connection/setup effects from the measured generation interval.
+  sleep 2
+  local before
+  before="$(count_ready)"
   local start_line
   start_line=$(( $(wc -l < "$SERVER_LOG") + 1 ))
   touch "$case_dir/go"
@@ -322,13 +347,13 @@ PY
   fi
 }
 
-# Each direction starts inside the permanent square and finishes in a distinct virgin
-# frontier edge. Lanes are twelve chunks apart while the runtime guard radius is four
-# for this view/simulation profile, so clients cannot satisfy one another's buffers.
-run_case 1  FrE east   8136  8216
-run_case 10 FrW west  -8120 -8200
-run_case 20 FrS south  8136  8216
-run_case 40 FrN north -8120 -8200
+# Each direction starts well inside the permanent square and finishes in a distinct
+# virgin frontier edge. Adjacent lane centers are 24 chunks apart, so the validated
+# minimum radius-4 buffers cannot satisfy one another.
+run_case 1  FrE east   8008  8216
+run_case 10 FrW west  -7992 -8200
+run_case 20 FrS south  8008  8216
+run_case 40 FrN north -7992 -8200
 
 printf 'frontier status\n' >&"$CONSOLE_FD"
 printf 'stop\n' >&"$CONSOLE_FD"
