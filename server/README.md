@@ -1,6 +1,8 @@
 # Enthusia TEMP server root
 
-This directory is laid out like the root of a normal Leaf/Paper Minecraft server. Copy the contents of `server/` directly into the empty Test2/Pterodactyl server root.
+This directory is the **sanitized deployment template** for the Test2 TEMP server. Do not upload the checked-in `server/` directory directly to Bloom: private forwarding/Floodgate/LuckPerms/Nexo deployment material is intentionally absent until the preparation step runs.
+
+The preferred prepared output is `build/test2-runtime/`, created by `tools/prepare-test2-local.ps1`. Upload the contents of that prepared directory (or its generated ZIP) into the empty Test2/Pterodactyl root.
 
 ## Runtime
 
@@ -8,7 +10,7 @@ This directory is laid out like the root of a normal Leaf/Paper Minecraft server
 - Leaf 1.21.11 build 179
 - Paper + Leaf + Gale + Purpur configs present
 - Leaf Secure Seed enabled
-- Velocity modern forwarding configured
+- Velocity modern forwarding configured during deployment preparation
 - Java + Bedrock through the existing Velocity/Geyser/Floodgate network
 
 ## World
@@ -27,7 +29,7 @@ The ordinary `level-seed` controls terrain. With Leaf Secure Seed enabled, struc
 
 ## Normal server layout
 
-The folder contains the normal runtime/config structure:
+The prepared folder contains the normal runtime/config structure:
 
 - `server.properties`
 - `eula.txt`
@@ -60,17 +62,19 @@ These are authoritative for TEMP. `populate-runtime.ps1` deliberately refuses to
 
 ## Prepare Test2
 
-For the actual Test2 deployment, use `prepare-test2.ps1`. It takes a **raw/current SMP server root** and copies only the approved regular dependencies/secrets that TEMP needs. It hash-verifies known JARs and does not copy SMP worlds, playerdata, inventories, CoreProtect data, playtime DBs or other progression state.
-
-Example:
+Preferred path from the repository root on Lincoln's Windows machine:
 
 ```powershell
-.\prepare-test2.ps1 `
-  -SourceSmpRoot 'D:\SMP' `
-  -BackendPort <TEST2_BACKEND_PORT>
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\prepare-test2-local.ps1 `
+  -BackendPort <TEST2_BACKEND_PORT> `
+  -CreateZip
 ```
 
-A successful preparation ends with `TEST2_TEMP_RUNTIME_READY`. See `TEST2-DEPLOYMENT.md` for the panel memory/JVM settings and deployment sequence.
+The helper uses the existing read-only `bloom-smp` rclone remote to copy only the approved live dependencies/configuration into an isolated, gitignored deployment copy. It does not copy SMP worlds, playerdata, inventories, CoreProtect data, playtime databases, or other progression state. It never performs a production rclone write/sync/delete operation.
+
+A successful preparation ends with `TEST2_TEMP_RUNTIME_READY` and creates `build/test2-runtime/`; with `-CreateZip` it also creates `build/Test2-TEMP-runtime.zip`.
+
+`prepare-test2.ps1` remains the lower-level helper for cases where a separate raw/current SMP root already exists locally. Run it only against an isolated copy of this template, not the tracked template itself, because the prepared runtime contains private deployment material.
 
 Private deployment data is intentionally never committed:
 
