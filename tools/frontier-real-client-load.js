@@ -11,49 +11,66 @@ function applyMineflayer263TeleportPatch() {
   }
 
   const source = fs.readFileSync(physicsFile, 'utf8');
-  const oldLine = "      bot._client.write('teleport_confirm', { teleportId })";
-  const upstreamPatchedBlock = `      bot._client.write('teleport_confirm', {
-        teleportId,
-        x: pos.x,
-        y: pos.y,
-        z: pos.z,
-        yRot: yaw,
-        xRot: pitch
-      })`;
-
-  // @wp2508/mineflayer 4.42.2 now carries its own 26.3 implementation. It
-  // gates the widened acknowledgement on protocol 777 and names the resolved
-  // rotation values yaw/pitch. Treat that exact shape as already fixed rather
-  // than trying to rewrite a dependency that no longer matches the old source.
-  const forkAlreadyFixed = [
+  const requiredForkShape = [
     "if (bot.protocolVersion >= 777)",
     "bot._client.write('teleport_confirm', {",
     'x: pos.x',
     'y: pos.y',
     'z: pos.z',
     'yaw: newYaw',
-    'pitch: newPitch'
-  ].every(token => source.includes(token));
+    'pitch: newPitch',
+    'const generation = ++forcedMoveGeneration'
+  ];
+  if (!requiredForkShape.every(token => source.includes(token))) {
+    throw new Error('Refusing to patch unexpected Mineflayer 26.3 physics source');
+  }
 
-  if (forkAlreadyFixed || source.includes(upstreamPatchedBlock)) {
+  const oldTail = `    sendPacketPositionAndLook(pos, newYaw, newPitch, bot.entity.onGround)
+
+    shouldUsePhysics = true
+    bot.jumpTicks = 0
+    lastSentYaw = bot.entity.yaw
+    lastSentPitch = bot.entity.pitch
+
+    bot.emit('forcedMove')`;
+  const marker = 'FRONTIER_26_3_DEFERRED_TELEPORT_ECHO';
+  if (source.includes(marker)) {
     console.log('MINEFLAYER_26_3_TELEPORT_PATCH already-present');
     return;
   }
 
-  const occurrences = source.split(oldLine).length - 1;
+  const occurrences = source.split(oldTail).length - 1;
   if (occurrences !== 1) {
-    throw new Error(`Refusing to patch unexpected Mineflayer physics source; expected one legacy teleport_confirm write, found ${occurrences}`);
+    throw new Error(`Refusing to patch unexpected Mineflayer movement echo; expected one exact tail, found ${occurrences}`);
   }
 
-  fs.writeFileSync(physicsFile, source.replace(oldLine, upstreamPatchedBlock));
-  console.log('MINEFLAYER_26_3_TELEPORT_PATCH applied upstream=PrismarineJS/mineflayer@741ddeb9b707000b6103bd23361c34fc39f82c68');
+  const deferredTail = `    // ${marker}: Minecraft 26.3/Paper validates the teleport acknowledgement
+    // before accepting the matching movement echo. Mirror vanilla/upstream cadence
+    // by sending that echo one client tick later, and discard it if a newer forced
+    // move superseded this teleport in the meantime.
+    const delayedPos = pos.clone()
+    const delayedYaw = newYaw
+    const delayedPitch = newPitch
+    const delayedOnGround = bot.entity.onGround
+    setTimeout(() => {
+      if (generation !== forcedMoveGeneration || bot._client.ended) return
+      sendPacketPositionAndLook(delayedPos, delayedYaw, delayedPitch, delayedOnGround)
+      shouldUsePhysics = true
+      bot.jumpTicks = 0
+      lastSentYaw = bot.entity.yaw
+      lastSentPitch = bot.entity.pitch
+      bot.emit('forcedMove')
+    }, PHYSICS_INTERVAL_MS)`;
+
+  fs.writeFileSync(physicsFile, source.replace(oldTail, deferredTail));
+  console.log('MINEFLAYER_26_3_TELEPORT_PATCH applied fork=wp2508/mineflayer@4.42.2 cadence=next-client-tick');
 }
 
 // The pinned @wp2508/mineflayer 4.42.2 fork supplies Minecraft 26.3 protocol
-// data. Some published revisions include the 26.3 teleport acknowledgement fix
-// directly; older compatible revisions need the exact upstream 741ddeb payload.
-// Verify one of those known-good shapes before Mineflayer loads and fail closed
-// for anything unexpected. This never modifies a production server artifact.
+// data and the widened 26.3 teleport-confirm fields. Its published physics
+// implementation still echoes movement in the same callback; Paper 26.3 can
+// reject that race under concurrent logins. Patch only that exact disposable
+// dependency tail to the one-client-tick ordering used by the upstream fix.
 applyMineflayer263TeleportPatch();
 const mineflayer = require('mineflayer');
 
