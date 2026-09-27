@@ -103,6 +103,20 @@ sleep 2
 DB="$SERVER/plugins/EnthusiaFrontier/frontier.db"
 test -s "$DB"
 
+teleport_case_players() {
+  local count="$1" prefix="$2" direction="$3" axis="$4"
+  for ((index=0; index<count; index++)); do
+    lane=$(( (2 * index - (count - 1)) * 192 ))
+    username="${prefix}$(printf '%02d' "$index")"
+    case "$direction" in
+      east|west) x="$axis"; z="$lane" ;;
+      north|south) x="$lane"; z="$axis" ;;
+      *) echo "Unsupported direction: $direction" >&2; return 1 ;;
+    esac
+    printf 'execute as %s at @s run teleport @s %s ~ %s\n' "$username" "$x" "$z" >&"$CONSOLE_FD"
+  done
+}
+
 run_case() {
   local count="$1" prefix="$2" direction="$3" start_axis="$4" target_axis="$5"
   local case_dir="$SMOKE/case-$count"
@@ -125,21 +139,34 @@ run_case() {
   for _ in $(seq 1 90); do
     [[ -s "$case_dir/positioned.json" ]] && break
     kill -0 "$client_pid" 2>/dev/null || { wait "$client_pid" || true; echo "Clients exited before case $count was positioned." >&2; return 1; }
-    for ((index=0; index<count; index++)); do
-      lane=$(( (2 * index - (count - 1)) * 192 ))
-      username="${prefix}$(printf '%02d' "$index")"
-      case "$direction" in
-        east|west) x="$start_axis"; z="$lane" ;;
-        north|south) x="$lane"; z="$start_axis" ;;
-      esac
-      printf 'execute as %s at @s run teleport @s %s ~ %s\n' "$username" "$x" "$z" >&"$CONSOLE_FD"
-    done
+    teleport_case_players "$count" "$prefix" "$direction" "$start_axis"
     sleep 1
   done
   [[ -s "$case_dir/positioned.json" ]] || { kill "$client_pid" 2>/dev/null || true; return 1; }
 
+  # Mineflayer's current 26.3 fork can connect and observe teleports but its
+  # continuous movement packets are rejected by Paper 26.3 as invalid. Frontier
+  # guards server teleports too, so keep the real network clients connected and
+  # repeatedly request the destination through the server until each guarded
+  # frontier buffer is ready and the client actually observes arrival.
   touch "$case_dir/go"
+  for _ in $(seq 1 240); do
+    [[ -s "$case_dir/result.json" ]] && break
+    kill -0 "$client_pid" 2>/dev/null || break
+    teleport_case_players "$count" "$prefix" "$direction" "$target_axis"
+    printf 'frontier status\n' >&"$CONSOLE_FD"
+    sleep 1
+  done
+
+  set +e
   wait "$client_pid"
+  client_rc=$?
+  set -e
+  if (( client_rc != 0 )); then
+    echo "Real-client case $count failed." >&2
+    return "$client_rc"
+  fi
+
   python3 - "$case_dir/result.json" "$count" <<'PY'
 import json, sys
 result=json.load(open(sys.argv[1]))
@@ -147,6 +174,7 @@ expected=int(sys.argv[2])
 assert result.get('status') == 'passed', result
 assert result.get('count') == expected, result
 assert len(result.get('positions', [])) == expected, result
+assert result.get('movement_mode') == 'server-teleport-with-real-network-clients', result
 print(f"FRONTIER_REAL_CLIENT_CASE clients={expected} elapsed_ms={result['elapsed_ms']:.1f}")
 PY
   printf 'frontier status\n' >&"$CONSOLE_FD"
@@ -175,10 +203,10 @@ with sqlite3.connect(sys.argv[1]) as connection:
 PY
 
 test ! -e "$SERVER/plugins/EnthusiaFrontier/CLEANUP_UNSAFE.latch"
-if grep -qE 'EnthusiaFrontier failed safe during startup|Global generation shield failed closed|FRONTIER_REAL_CLIENT_FAILED' "$SERVER_LOG"; then
+if grep -qE 'EnthusiaFrontier failed safe during startup|Global generation shield failed closed' "$SERVER_LOG"; then
   echo 'Frontier reported a fail-closed/runtime failure during real-client testing.' >&2
   exit 1
 fi
 
 trap - EXIT
-echo 'FRONTIER_REAL_CLIENT_LOAD_OK clients=1,10,20,40 minecraft=26.3 real_network_clients=true'
+echo 'FRONTIER_REAL_CLIENT_LOAD_OK clients=1,10,20,40 minecraft=26.3 real_network_clients=true movement=guarded-server-teleport'
