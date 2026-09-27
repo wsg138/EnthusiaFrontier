@@ -5,7 +5,6 @@ on:
     branches: [server/frontier-test-runtime]
     paths:
       - 'server-src/EnthusiaTempChallenges/**'
-      - 'server/plugins/EnthusiaAdvancements/trees/frontier_firsts.conf'
       - 'tools/build-frontier-challenges.sh'
       - 'tools/smoke-frontier-challenges.sh'
       - '.github/workflows/frontier-challenges-build.yml'
@@ -21,23 +20,26 @@ concurrency:
 jobs:
   build-test-package:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
           cache: maven
-      - name: Build, test, and assemble runtime
+
+      - name: Build and test minimal 26.3 challenge runtime
         shell: bash
         run: |
           set -o pipefail
           BUILD_LOG="$RUNNER_TEMP/frontier-challenges-build.log"
           echo "Capturing full build output in $BUILD_LOG"
           PS4='+ ${BASH_SOURCE}:${LINENO}: ' bash -x tools/build-frontier-challenges.sh 2>&1 | tee "$BUILD_LOG"
+
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -46,41 +48,43 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
           path: ${{ runner.temp }}/frontier-challenges-build.log
-      - name: Smoke test on real Leaf 1.21.11
+
+      - name: Smoke test on real Paper 26.3
         run: bash tools/smoke-frontier-challenges.sh
+
       - name: Preserve built runtime before reconciling branch
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p "$RUNNER_TEMP/frontier-built"
           cp server/plugins/EnthusiaTempChallenges-0.2.0-frontier.1.jar "$RUNNER_TEMP/frontier-built/"
-          cp server/plugins/EnthusiaAdvancements-1.0.0-frontier.jar "$RUNNER_TEMP/frontier-built/"
-          cp server/plugins/UltimateAdvancementAPI-2.8.1.jar "$RUNNER_TEMP/frontier-built/"
           cp server/plugins/EnthusiaTags.jar "$RUNNER_TEMP/frontier-built/"
           cp server/plugins/EnthusiaTempChallenges/config.yml "$RUNNER_TEMP/frontier-built/temp-config.yml"
           cp server/plugins/EnthusiaTags/config.yml "$RUNNER_TEMP/frontier-built/tags-config.yml"
           cp server/PLUGIN-SHA256SUMS.txt "$RUNNER_TEMP/frontier-built/"
+
       - name: Upload exact built runtime
         uses: actions/upload-artifact@v4
         with:
           name: frontier-challenge-runtime
           if-no-files-found: error
+          retention-days: 14
           path: |
             server/plugins/EnthusiaTempChallenges-0.2.0-frontier.1.jar
-            server/plugins/EnthusiaAdvancements-1.0.0-frontier.jar
-            server/plugins/UltimateAdvancementAPI-2.8.1.jar
             server/plugins/EnthusiaTags.jar
             server/plugins/EnthusiaTempChallenges/config.yml
             server/plugins/EnthusiaTags/config.yml
-            server/plugins/EnthusiaAdvancements/trees/frontier_firsts.conf
             server/PLUGIN-SHA256SUMS.txt
-      - name: Commit exact deployable runtime binaries without overwriting parallel work
+
+      - name: Commit exact deployable runtime without overwriting parallel work
         if: github.ref == 'refs/heads/server/frontier-test-runtime'
+        shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          publish_attempt=1
-          while [ "$publish_attempt" -le 20 ]; do
+          for publish_attempt in $(seq 1 20); do
             echo "Publication attempt $publish_attempt/20"
             git fetch origin server/frontier-test-runtime
             REMOTE=origin/server/frontier-test-runtime
@@ -89,7 +93,6 @@ jobs:
               server-src/EnthusiaTempChallenges \
               tools/build-frontier-challenges.sh \
               tools/smoke-frontier-challenges.sh \
-              server/plugins/EnthusiaAdvancements/trees/frontier_firsts.conf \
               .github/workflows/frontier-challenges-build.yml; then
               echo 'Challenge source/build definition changed after this workflow started; refusing to publish stale binaries.' >&2
               exit 1
@@ -97,18 +100,17 @@ jobs:
 
             git reset --hard "$REMOTE"
             cp "$RUNNER_TEMP/frontier-built/EnthusiaTempChallenges-0.2.0-frontier.1.jar" server/plugins/
-            cp "$RUNNER_TEMP/frontier-built/EnthusiaAdvancements-1.0.0-frontier.jar" server/plugins/
-            cp "$RUNNER_TEMP/frontier-built/UltimateAdvancementAPI-2.8.1.jar" server/plugins/
             cp "$RUNNER_TEMP/frontier-built/EnthusiaTags.jar" server/plugins/
             mkdir -p server/plugins/EnthusiaTempChallenges server/plugins/EnthusiaTags
             cp "$RUNNER_TEMP/frontier-built/temp-config.yml" server/plugins/EnthusiaTempChallenges/config.yml
             cp "$RUNNER_TEMP/frontier-built/tags-config.yml" server/plugins/EnthusiaTags/config.yml
             cp "$RUNNER_TEMP/frontier-built/PLUGIN-SHA256SUMS.txt" server/PLUGIN-SHA256SUMS.txt
+            rm -f server/plugins/EnthusiaAdvancements-1.0.0-frontier.jar
+            rm -f server/plugins/UltimateAdvancementAPI-2.8.1.jar
 
             python3 - <<'PY'
           from pathlib import Path
-          import os
-          import re
+          import os, re
 
           manifest = Path('server/BINARY-MANIFEST.yml')
           text = manifest.read_text()
@@ -124,10 +126,10 @@ jobs:
               sha, path = line.split(None, 1)
               hashes[Path(path).name] = sha
 
-          # Keep the top-level deployable plugin manifest synchronized with the
-          # exact JARs that were just built. The marked provenance block below is
-          # supplemental metadata, not a competing artifact identity.
-          for name, sha in hashes.items():
+          # Unsupported 26.3 advancement/NMS runtime is intentionally absent.
+          text = re.sub(r'(?m)^  (?:EnthusiaAdvancements-1\.0\.0-frontier\.jar|UltimateAdvancementAPI-2\.8\.1\.jar): [0-9a-f]{64}\n?', '', text)
+          for name in ('EnthusiaTempChallenges-0.2.0-frontier.1.jar', 'EnthusiaTags.jar'):
+              sha = hashes[name]
               pattern = rf'(?m)^  {re.escape(name)}:\s*[0-9a-f]{{64}}\s*$'
               replacement = f'  {name}: {sha}'
               text, count = re.subn(pattern, replacement, text, count=1)
@@ -137,30 +139,25 @@ jobs:
           block = f'''{begin}
           challenge_runtime:
             source_commit: {os.environ['GITHUB_SHA']}
-            java: 21
-            paper_api: 1.21.11-R0.1-SNAPSHOT
+            java: 25
+            paper_api: 26.3.build.49-alpha
             sqlite_jdbc: 3.53.4.0
-            luckperms_integration: optional-reflective
-            floodgate_integration: optional-reflective
-            spigot_buildtools_build: 201
-            badgers_advancements_source: 42e901473234f5b69c07d5416565d80addbb197d
-            ultimate_advancement_api: 2.8.1
-            ultimate_advancement_api_source: 67d9576ae5e4ec55701ac653194bb77c5f1e708c
-            ultimate_advancement_api_nms: 1_21_R7
+            luckperms_entitlement: context-free-global
+            advancement_presentation: disabled-until-26.3-compatible
             enthusia_tags_source: 261efb9144216ae86a4a2c8ed406a7f44dcae851
             artifacts:
           '''
-          for name, sha in hashes.items():
-              block += f'    {name}: {sha}\n'
+          for name in ('EnthusiaTempChallenges-0.2.0-frontier.1.jar', 'EnthusiaTags.jar'):
+              block += f'    {name}: {hashes[name]}\n'
           block += end + '\n'
-          manifest.write_text(text + '\n\n' + block)
+          manifest.write_text(text.rstrip() + '\n\n' + block)
           PY
 
-            git add -f \
+            git add -A \
               server/plugins/EnthusiaTempChallenges-0.2.0-frontier.1.jar \
+              server/plugins/EnthusiaTags.jar \
               server/plugins/EnthusiaAdvancements-1.0.0-frontier.jar \
               server/plugins/UltimateAdvancementAPI-2.8.1.jar \
-              server/plugins/EnthusiaTags.jar \
               server/plugins/EnthusiaTempChallenges/config.yml \
               server/plugins/EnthusiaTags/config.yml \
               server/PLUGIN-SHA256SUMS.txt \
@@ -171,14 +168,11 @@ jobs:
               exit 0
             fi
 
-            git commit -m 'Build deployable Frontier challenge runtime'
+            git commit -m 'Publish Paper 26.3 TEMP challenge runtime'
             if git push origin HEAD:server/frontier-test-runtime; then
-              echo 'Published exact deployable runtime binaries.'
+              echo 'Published minimal Paper 26.3 TEMP challenge runtime.'
               exit 0
             fi
-
-            echo 'Branch advanced during publication; retrying from the new remote head.' >&2
-            publish_attempt=$((publish_attempt + 1))
             sleep 1
           done
 
