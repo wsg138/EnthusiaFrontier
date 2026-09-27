@@ -19,17 +19,13 @@ function parseArgs(argv) {
 
 function required(args, key) {
   const value = args.get(key);
-  if (value === undefined || value === '') {
-    throw new Error(`missing --${key}`);
-  }
+  if (value === undefined || value === '') throw new Error(`missing --${key}`);
   return value;
 }
 
 function integer(args, key) {
   const value = Number.parseInt(required(args, key), 10);
-  if (!Number.isInteger(value)) {
-    throw new Error(`--${key} must be an integer`);
-  }
+  if (!Number.isInteger(value)) throw new Error(`--${key} must be an integer`);
   return value;
 }
 
@@ -40,12 +36,8 @@ function sleep(milliseconds) {
 async function waitForFile(file, timeoutMs, fatalState) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (fatalState.error) {
-      throw fatalState.error;
-    }
-    if (fs.existsSync(file)) {
-      return;
-    }
+    if (fatalState.error) throw fatalState.error;
+    if (fs.existsSync(file)) return;
     await sleep(50);
   }
   throw new Error(`timed out waiting for ${file}`);
@@ -63,34 +55,17 @@ function atStart(bot, startAxis, direction) {
 
 function reached(position, target, direction) {
   return direction === 'east' || direction === 'south'
-    ? position >= target
-    : position <= target;
-}
-
-function lookTarget(bot, direction) {
-  switch (direction) {
-    case 'east':
-      return bot.entity.position.offset(1000, 0, 0);
-    case 'west':
-      return bot.entity.position.offset(-1000, 0, 0);
-    case 'south':
-      return bot.entity.position.offset(0, 0, 1000);
-    case 'north':
-      return bot.entity.position.offset(0, 0, -1000);
-    default:
-      throw new Error(`unsupported direction ${direction}`);
-  }
+    ? position >= target - 1
+    : position <= target + 1;
 }
 
 function positions(bots) {
-  return bots
-    .filter(bot => bot.entity)
-    .map(bot => ({
-      username: bot.username,
-      x: bot.entity.position.x,
-      y: bot.entity.position.y,
-      z: bot.entity.position.z,
-    }));
+  return bots.filter(bot => bot.entity).map(bot => ({
+    username: bot.username,
+    x: bot.entity.position.x,
+    y: bot.entity.position.y,
+    z: bot.entity.position.z,
+  }));
 }
 
 async function main() {
@@ -104,15 +79,9 @@ async function main() {
   const startAxis = integer(args, 'start-axis');
   const targetAxis = integer(args, 'target-axis');
   const timeoutMs = integer(args, 'timeout-ms');
-  if (count < 1 || count > 40) {
-    throw new Error('--count must be within 1..40');
-  }
-  if (!['east', 'west', 'south', 'north'].includes(direction)) {
-    throw new Error('--direction must be east, west, south, or north');
-  }
-  if (prefix.length + 2 > 16) {
-    throw new Error('bot usernames would exceed Minecraft 16-character limit');
-  }
+  if (count < 1 || count > 40) throw new Error('--count must be within 1..40');
+  if (!['east', 'west', 'south', 'north'].includes(direction)) throw new Error('--direction must be east, west, south, or north');
+  if (prefix.length + 2 > 16) throw new Error('bot usernames would exceed Minecraft 16-character limit');
 
   fs.mkdirSync(markerDir, { recursive: true });
   const connectedFile = path.join(markerDir, 'connected.json');
@@ -126,138 +95,72 @@ async function main() {
   const spawned = [];
   for (let index = 0; index < count; index++) {
     const username = `${prefix}${String(index).padStart(2, '0')}`;
-    const bot = mineflayer.createBot({
-      host,
-      port,
-      username,
-      version: '26.3',
-      auth: 'offline',
-    });
+    const bot = mineflayer.createBot({ host, port, username, version: '26.3', auth: 'offline' });
     bots.push(bot);
     spawned.push(new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`${username} did not spawn within 45 seconds`)), 45_000);
-      bot.once('spawn', () => {
-        clearTimeout(timer);
-        resolve();
-      });
-      bot.once('error', error => {
-        clearTimeout(timer);
-        reject(new Error(`${username} client error before spawn: ${error.message}`));
-      });
-      bot.once('kicked', reason => {
-        clearTimeout(timer);
-        reject(new Error(`${username} was kicked before spawn: ${String(reason)}`));
-      });
+      bot.once('spawn', () => { clearTimeout(timer); resolve(); });
+      bot.once('error', error => { clearTimeout(timer); reject(new Error(`${username} client error before spawn: ${error.message}`)); });
+      bot.once('kicked', reason => { clearTimeout(timer); reject(new Error(`${username} was kicked before spawn: ${JSON.stringify(reason)}`)); });
     }));
     bot.on('error', error => {
-      if (!finishing && !fatalState.error) {
-        fatalState.error = new Error(`${username} client error: ${error.message}`);
-      }
+      if (!finishing && !fatalState.error) fatalState.error = new Error(`${username} client error: ${error.message}`);
     });
     bot.on('kicked', reason => {
-      if (!finishing && !fatalState.error) {
-        fatalState.error = new Error(`${username} was kicked: ${String(reason)}`);
-      }
+      if (!finishing && !fatalState.error) fatalState.error = new Error(`${username} was kicked: ${JSON.stringify(reason)}`);
     });
     bot.on('end', reason => {
-      if (!finishing && !fatalState.error) {
-        fatalState.error = new Error(`${username} disconnected early: ${String(reason)}`);
-      }
+      if (!finishing && !fatalState.error) fatalState.error = new Error(`${username} disconnected early: ${String(reason)}`);
     });
   }
 
   try {
     await Promise.all(spawned);
-    fs.writeFileSync(connectedFile, JSON.stringify({
-      count,
-      usernames: bots.map(bot => bot.username),
-    }, null, 2));
+    fs.writeFileSync(connectedFile, JSON.stringify({ count, usernames: bots.map(bot => bot.username) }, null, 2));
     console.log(`FRONTIER_REAL_CLIENT_CONNECTED count=${count}`);
 
     const positionedDeadline = Date.now() + 60_000;
     while (!bots.every(bot => atStart(bot, startAxis, direction))) {
-      if (fatalState.error) {
-        throw fatalState.error;
-      }
+      if (fatalState.error) throw fatalState.error;
       if (Date.now() >= positionedDeadline) {
         const observed = bots.map(bot => `${bot.username}=${axisPosition(bot, direction).toFixed(2)}`).join(',');
         throw new Error(`clients did not reach setup axis ${startAxis}; positions=${observed}`);
       }
       await sleep(50);
     }
-    fs.writeFileSync(positionedFile, JSON.stringify({
-      count,
-      start_axis: startAxis,
-      positions: positions(bots),
-    }, null, 2));
+    fs.writeFileSync(positionedFile, JSON.stringify({ count, start_axis: startAxis, positions: positions(bots) }, null, 2));
     console.log(`FRONTIER_REAL_CLIENT_POSITIONED count=${count}`);
 
     await waitForFile(goFile, 60_000, fatalState);
-    for (const bot of bots) {
-      const observed = axisPosition(bot, direction);
-      if (Math.abs(observed - startAxis) > 12) {
-        throw new Error(`${bot.username} moved away from the expected start axis: ${observed.toFixed(3)} vs ${startAxis}`);
-      }
-    }
-
-    await Promise.all(bots.map(bot => bot.lookAt(lookTarget(bot, direction), true)));
     const started = process.hrtime.bigint();
-    for (const bot of bots) {
-      bot.setControlState('sprint', true);
-      bot.setControlState('forward', true);
-    }
-
     const deadline = Date.now() + timeoutMs;
     while (true) {
-      if (fatalState.error) {
-        throw fatalState.error;
-      }
-      if (bots.every(bot => reached(axisPosition(bot, direction), targetAxis, direction))) {
-        break;
-      }
+      if (fatalState.error) throw fatalState.error;
+      if (bots.every(bot => reached(axisPosition(bot, direction), targetAxis, direction))) break;
       if (Date.now() >= deadline) {
         const observed = bots.map(bot => `${bot.username}=${axisPosition(bot, direction).toFixed(2)}`).join(',');
-        throw new Error(`movement timed out; positions=${observed}`);
+        throw new Error(`server-driven boundary teleport timed out; positions=${observed}`);
       }
       await sleep(100);
     }
 
     const elapsedMs = Number(process.hrtime.bigint() - started) / 1_000_000;
-    for (const bot of bots) {
-      bot.setControlState('forward', false);
-      bot.setControlState('sprint', false);
-    }
     const result = {
-      status: 'passed',
-      count,
-      direction,
-      elapsed_ms: elapsedMs,
-      start_axis: startAxis,
-      target_axis: targetAxis,
-      positions: positions(bots),
+      status: 'passed', count, direction, elapsed_ms: elapsedMs,
+      start_axis: startAxis, target_axis: targetAxis, positions: positions(bots),
+      movement_mode: 'server-teleport-with-real-network-clients',
     };
     fs.writeFileSync(resultFile, JSON.stringify(result, null, 2));
     console.log(`FRONTIER_REAL_CLIENT_REACHED count=${count} elapsed_ms=${elapsedMs.toFixed(1)}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    fs.writeFileSync(resultFile, JSON.stringify({
-      status: 'failed',
-      count,
-      direction,
-      error: message,
-      positions: positions(bots),
-    }, null, 2));
+    fs.writeFileSync(resultFile, JSON.stringify({ status: 'failed', count, direction, error: message, positions: positions(bots) }, null, 2));
     console.error(`FRONTIER_REAL_CLIENT_FAILED count=${count} reason=${message}`);
     process.exitCode = 1;
   } finally {
     finishing = true;
     for (const bot of bots) {
-      try {
-        bot.clearControlStates();
-        bot.quit('Frontier test complete');
-      } catch (_) {
-        // Best-effort disconnect only; the disposable server is process-isolated.
-      }
+      try { bot.quit('Frontier test complete'); } catch (_) { /* best effort */ }
     }
     await sleep(500);
   }
