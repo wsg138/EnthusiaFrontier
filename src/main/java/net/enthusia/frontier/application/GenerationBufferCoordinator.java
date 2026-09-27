@@ -39,16 +39,16 @@ public final class GenerationBufferCoordinator {
         if (radius < 0 || radius > 40) {
             throw new IllegalArgumentException("buffer radius must be within 0..40 chunks");
         }
-        if (!shield.healthy()) {
-            return GenerationBufferStatus.FAIL_CLOSED;
-        }
 
         BufferCenter center = new BufferCenter(worldUuid, centerX, centerZ, radius);
         PendingBuffer existing = byRequester.get(requesterId);
         if (existing != null && existing.center().equals(center)) {
-            return existing.missing().isEmpty()
-                    ? GenerationBufferStatus.READY
-                    : GenerationBufferStatus.PENDING;
+            if (existing.missing().isEmpty()) {
+                return GenerationBufferStatus.READY;
+            }
+            return shield.healthy()
+                    ? GenerationBufferStatus.PENDING
+                    : GenerationBufferStatus.FAIL_CLOSED;
         }
 
         PendingBuffer pending = new PendingBuffer(center, new LinkedHashSet<>(), new LinkedHashSet<>());
@@ -57,6 +57,9 @@ public final class GenerationBufferCoordinator {
             for (int deltaZ = -radius; deltaZ <= radius; deltaZ++) {
                 ChunkKey key = new ChunkKey(worldUuid, centerX + deltaX, centerZ + deltaZ);
                 if (!submitOrResolve(requesterId, pending, key)) {
+                    // Never retain a partially evaluated square as a valid cached center.
+                    // On recovery the next prepare call must rescan the whole buffer.
+                    byRequester.remove(requesterId, pending);
                     return GenerationBufferStatus.FAIL_CLOSED;
                 }
             }

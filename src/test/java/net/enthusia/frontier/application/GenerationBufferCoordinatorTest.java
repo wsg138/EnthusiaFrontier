@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 import net.enthusia.frontier.domain.ChunkKey;
 import net.enthusia.frontier.domain.GlobalGenerationLimits;
 import org.junit.jupiter.api.Test;
@@ -73,6 +74,39 @@ class GenerationBufferCoordinatorTest {
 
         harness.healthy.set(false);
         assertEquals(GenerationBufferStatus.FAIL_CLOSED, coordinator.prepare("player", WORLD, 3, 3, 0));
+        assertEquals(0, coordinator.pendingBuffers());
+    }
+
+    @Test
+    void unhealthyShieldStillAllowsCoreAndKnownReadyBuffers() {
+        Harness core = new Harness(64, ignored -> false);
+        core.healthy.set(false);
+        GenerationBufferCoordinator coreCoordinator = new GenerationBufferCoordinator(core.shield, core.readiness);
+        assertEquals(GenerationBufferStatus.READY, coreCoordinator.prepare("core-player", WORLD, 0, 0, 1));
+        assertEquals(0, core.shield.metrics().queued());
+
+        Harness ready = new Harness(64);
+        ready.readiness.ready.add(key(5, 5));
+        ready.healthy.set(false);
+        GenerationBufferCoordinator readyCoordinator = new GenerationBufferCoordinator(ready.shield, ready.readiness);
+        assertEquals(GenerationBufferStatus.READY, readyCoordinator.prepare("ready-player", WORLD, 5, 5, 0));
+        assertEquals(0, ready.shield.metrics().queued());
+    }
+
+    @Test
+    void failedMixedBufferIsDiscardedAndFullyRevalidatedAfterRecovery() {
+        Harness harness = new Harness(64, candidate -> candidate.x() > 0);
+        GenerationBufferCoordinator coordinator = new GenerationBufferCoordinator(harness.shield, harness.readiness);
+        harness.healthy.set(false);
+
+        assertEquals(GenerationBufferStatus.FAIL_CLOSED, coordinator.prepare("player", WORLD, 0, 0, 1));
+        assertEquals(0, coordinator.pendingBuffers());
+        assertEquals(0, harness.shield.metrics().queued());
+
+        harness.healthy.set(true);
+        assertEquals(GenerationBufferStatus.PENDING, coordinator.prepare("player", WORLD, 0, 0, 1));
+        assertEquals(3, harness.shield.metrics().queued());
+        assertEquals(1, coordinator.pendingBuffers());
     }
 
     @Test
@@ -106,9 +140,13 @@ class GenerationBufferCoordinatorTest {
         private final GenerationShieldService shield;
 
         private Harness(int capacity) {
+            this(capacity, ignored -> true);
+        }
+
+        private Harness(int capacity, Predicate<ChunkKey> managed) {
             shield = new GenerationShieldService(
                     capacity,
-                    ignored -> true,
+                    managed,
                     readiness,
                     generation,
                     healthy::get,

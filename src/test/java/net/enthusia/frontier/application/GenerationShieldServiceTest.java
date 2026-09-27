@@ -118,10 +118,18 @@ class GenerationShieldServiceTest {
     }
 
     @Test
-    void coreBypassesQueueAndUnhealthyStateFailsClosed() {
+    void coreAndDurablyReadyChunksRemainTraversableWhenUnhealthy() {
         Harness core = new Harness(8, false);
+        core.externalHealthy.set(false);
         assertEquals(GenerationAdmission.CORE_BYPASS, core.service.request("a", key(1, 5)));
         assertEquals(0, core.service.metrics().queued());
+
+        Harness ready = new Harness(8, true);
+        ChunkKey knownReady = key(2, 5);
+        ready.readiness.ready.add(knownReady);
+        ready.externalHealthy.set(false);
+        assertEquals(GenerationAdmission.READY, ready.service.request("a", knownReady));
+        assertEquals(0, ready.service.metrics().queued());
 
         Harness unhealthy = new Harness(8, true);
         unhealthy.externalHealthy.set(false);

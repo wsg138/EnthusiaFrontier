@@ -87,19 +87,24 @@ public final class GenerationShieldService implements AutoCloseable {
             rejected++;
             return GenerationAdmission.REJECTED_STOPPED;
         }
-        if (!healthy()) {
-            rejected++;
-            return GenerationAdmission.REJECTED_UNHEALTHY;
-        }
+        // Permanent-core chunks require no Frontier generation work. Keep that bypass
+        // available even when the generation subsystem has failed closed so normal
+        // movement through already-generated permanent terrain is not frozen.
         if (!managedChunk.test(key)) {
             return GenerationAdmission.CORE_BYPASS;
         }
+        // Known-ready managed chunks are also safe to traverse during a health failure.
+        // Fail closed only when satisfying the request would require new generation.
         try {
             if (readiness.isReady(key)) {
                 return GenerationAdmission.READY;
             }
         } catch (Exception exception) {
             fail("generation readiness lookup failed for " + key, exception);
+            rejected++;
+            return GenerationAdmission.REJECTED_UNHEALTHY;
+        }
+        if (!healthy()) {
             rejected++;
             return GenerationAdmission.REJECTED_UNHEALTHY;
         }
