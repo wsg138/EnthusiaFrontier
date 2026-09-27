@@ -2,6 +2,46 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+
+function applyMineflayer263TeleportPatch() {
+  const mineflayerRoot = path.dirname(require.resolve('mineflayer'));
+  const physicsFile = path.join(mineflayerRoot, 'lib', 'plugins', 'physics.js');
+  if (!fs.existsSync(physicsFile)) {
+    throw new Error(`Mineflayer physics source not found: ${physicsFile}`);
+  }
+
+  const source = fs.readFileSync(physicsFile, 'utf8');
+  const oldLine = "      bot._client.write('teleport_confirm', { teleportId })";
+  const patchedBlock = `      bot._client.write('teleport_confirm', {
+        teleportId,
+        x: pos.x,
+        y: pos.y,
+        z: pos.z,
+        yRot: yaw,
+        xRot: pitch
+      })`;
+
+  if (source.includes(patchedBlock)) {
+    console.log('MINEFLAYER_26_3_TELEPORT_PATCH already-present');
+    return;
+  }
+
+  const occurrences = source.split(oldLine).length - 1;
+  if (occurrences !== 1) {
+    throw new Error(`Refusing to patch unexpected Mineflayer physics source; expected one legacy teleport_confirm write, found ${occurrences}`);
+  }
+
+  fs.writeFileSync(physicsFile, source.replace(oldLine, patchedBlock));
+  console.log('MINEFLAYER_26_3_TELEPORT_PATCH applied upstream=PrismarineJS/mineflayer@741ddeb9b707000b6103bd23361c34fc39f82c68');
+}
+
+// The pinned @wp2508/mineflayer 4.42.2 fork supplies Minecraft 26.3 protocol
+// data, but it predates the upstream 26.3 accept_teleportation fix. Minecraft
+// 26.3 requires teleport_confirm to echo the resolved position/rotation; sending
+// only teleportId serializes the new fields as NaN and Paper rejects the client.
+// Apply the exact upstream 741ddeb payload to the disposable test dependency
+// before Mineflayer loads. This never modifies a production server artifact.
+applyMineflayer263TeleportPatch();
 const mineflayer = require('mineflayer');
 
 function parseArgs(argv) {
@@ -104,9 +144,9 @@ async function main() {
       physicsEnabled: false,
     });
 
-    // These clients only observe server-driven Frontier teleports. The 26.3
-    // Mineflayer fork does not expose clearControlStates(), so keep physics
-    // disabled through its supported flag instead of calling an absent API.
+    // These clients only observe server-driven Frontier teleports. Keep local
+    // physics disabled so the test measures server-side generation admission,
+    // not autonomous bot motion.
     bot.physicsEnabled = false;
 
     bots.push(bot);
