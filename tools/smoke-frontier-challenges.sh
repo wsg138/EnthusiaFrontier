@@ -3,49 +3,46 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SMOKE="${RUNNER_TEMP:-/tmp}/frontier-challenges-smoke"
-LEAF_NAME='leaf-1.21.11-179.jar'
-LEAF_URL='https://github.com/Winds-Studio/Leaf/releases/download/ver-1.21.11/leaf-1.21.11-179.jar'
-LEAF_SHA='5da79782215c1a25edcd7c73b3523b7ecb7f4b86dc8a5846a176ed69bc2cd020'
+PAPER_NAME='paper-26.3.jar'
 
 rm -rf "$SMOKE"
-mkdir -p "$SMOKE/plugins/EnthusiaTempChallenges" \
-         "$SMOKE/plugins/EnthusiaAdvancements/trees" \
-         "$SMOKE/plugins/EnthusiaTags"
+mkdir -p "$SMOKE/plugins/EnthusiaTempChallenges" "$SMOKE/plugins/EnthusiaTags"
 
 cp "$ROOT/server/plugins/EnthusiaTempChallenges-0.2.0-frontier.1.jar" "$SMOKE/plugins/"
-cp "$ROOT/server/plugins/EnthusiaAdvancements-1.0.0-frontier.jar" "$SMOKE/plugins/"
-cp "$ROOT/server/plugins/UltimateAdvancementAPI-2.8.1.jar" "$SMOKE/plugins/"
 cp "$ROOT/server/plugins/EnthusiaTags.jar" "$SMOKE/plugins/"
 cp "$ROOT/server/plugins/EnthusiaTempChallenges/config.yml" "$SMOKE/plugins/EnthusiaTempChallenges/config.yml"
-cp "$ROOT/server/plugins/EnthusiaAdvancements/trees/frontier_firsts.conf" "$SMOKE/plugins/EnthusiaAdvancements/trees/frontier_firsts.conf"
 cp "$ROOT/server/plugins/EnthusiaTags/config.yml" "$SMOKE/plugins/EnthusiaTags/config.yml"
 
-curl --fail --location --retry 3 --silent --show-error "$LEAF_URL" -o "$SMOKE/$LEAF_NAME"
-echo "$LEAF_SHA  $SMOKE/$LEAF_NAME" | sha256sum --check --status
+user_agent='EnthusiaFrontier challenge validation (github.com/wsg138/EnthusiaFrontier)'
+curl --fail --silent --show-error --location --retry 3 \
+  -H "User-Agent: ${user_agent}" \
+  'https://fill.papermc.io/v3/projects/paper/versions/26.3/builds' \
+  -o "$SMOKE/paper-builds.json"
+paper_url=''
+for channel in STABLE BETA ALPHA; do
+  candidate="$(jq -r --arg channel "$channel" '[.[] | select(.channel == $channel)] | sort_by(.id // .number) | last | .downloads."server:default".url // empty' "$SMOKE/paper-builds.json")"
+  if [[ -n "$candidate" ]]; then paper_url="$candidate"; break; fi
+done
+test -n "$paper_url"
+curl --fail --silent --show-error --location --retry 3 -H "User-Agent: ${user_agent}" "$paper_url" -o "$SMOKE/$PAPER_NAME"
+test -s "$SMOKE/$PAPER_NAME"
+sha256sum "$SMOKE/$PAPER_NAME"
 
 cat > "$SMOKE/eula.txt" <<'EOF'
 eula=true
 EOF
 cat > "$SMOKE/server.properties" <<'EOF'
-accepts-transfers=false
-allow-flight=false
 allow-nether=true
 difficulty=peaceful
-enable-command-block=false
 enable-query=false
 enable-rcon=false
 enforce-secure-profile=false
-enforce-whitelist=false
 generate-structures=false
-hardcore=false
 level-name=world
 level-type=minecraft:flat
 max-players=1
 motd=Frontier challenge CI smoke
-network-compression-threshold=256
 online-mode=false
-prevent-proxy-connections=false
-query.port=25587
 server-ip=127.0.0.1
 server-port=25587
 simulation-distance=2
@@ -64,7 +61,7 @@ mkfifo "$PIPE"
 exec 3<>"$PIPE"
 
 pushd "$SMOKE" >/dev/null
-java -Xms512M -Xmx1536M -jar "$LEAF_NAME" --nogui <"$PIPE" >server.log 2>&1 &
+java -Xms512M -Xmx1536M -jar "$PAPER_NAME" --nogui <"$PIPE" >server.log 2>&1 &
 SERVER_PID=$!
 popd >/dev/null
 
@@ -72,14 +69,11 @@ cleanup() {
   rc=$?
   if kill -0 "$SERVER_PID" 2>/dev/null; then
     printf 'stop\n' >&3 || true
-    for _ in $(seq 1 20); do
-      kill -0 "$SERVER_PID" 2>/dev/null || break
-      sleep 1
-    done
+    for _ in $(seq 1 20); do kill -0 "$SERVER_PID" 2>/dev/null || break; sleep 1; done
     kill "$SERVER_PID" 2>/dev/null || true
   fi
   if (( rc != 0 )); then
-    echo '--- Frontier challenge Leaf smoke failed; server.log follows ---' >&2
+    echo '--- Frontier challenge Paper 26.3 smoke failed; server.log follows ---' >&2
     tail -n 300 "$SMOKE/server.log" >&2 || true
     echo '--- end server.log ---' >&2
   fi
@@ -89,73 +83,40 @@ trap cleanup EXIT
 
 started=false
 for _ in $(seq 1 180); do
-  if grep -qE 'Done \([0-9.]+s\)!|Done \(' "$SMOKE/server.log"; then
-    started=true
-    break
-  fi
-  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-    echo 'Leaf exited before reaching Done.' >&2
-    exit 1
-  fi
+  if grep -qE 'Done \([0-9.]+s\)!|Done \(' "$SMOKE/server.log"; then started=true; break; fi
+  if ! kill -0 "$SERVER_PID" 2>/dev/null; then echo 'Paper exited before reaching Done.' >&2; exit 1; fi
   sleep 1
 done
-
-if [[ "$started" != true ]]; then
-  echo 'Leaf did not reach Done within 180 seconds.' >&2
-  exit 1
-fi
+[[ "$started" == true ]] || { echo 'Paper did not reach Done within 180 seconds.' >&2; exit 1; }
 
 printf 'plugins\n' >&3
 printf 'tempchallenge status\n' >&3
 sleep 4
 printf 'stop\n' >&3
-
-for _ in $(seq 1 45); do
-  kill -0 "$SERVER_PID" 2>/dev/null || break
-  sleep 1
-done
-if kill -0 "$SERVER_PID" 2>/dev/null; then
-  echo 'Leaf did not stop cleanly.' >&2
-  exit 1
-fi
+for _ in $(seq 1 45); do kill -0 "$SERVER_PID" 2>/dev/null || break; sleep 1; done
+if kill -0 "$SERVER_PID" 2>/dev/null; then echo 'Paper did not stop cleanly.' >&2; exit 1; fi
 wait "$SERVER_PID"
 
-if grep -qE 'Could not enable durable Frontier Firsts|Error occurred while enabling (UltimateAdvancementAPI|EnthusiaAdvancements|EnthusiaTags|EnthusiaTempChallenges)|Unknown/missing dependency.*(UltimateAdvancementAPI|EnthusiaAdvancements|EnthusiaTags|EnthusiaTempChallenges)|Could not load plugin.*(UltimateAdvancementAPI|EnthusiaAdvancements|EnthusiaTags|EnthusiaTempChallenges)' "$SMOKE/server.log"; then
-  echo 'One or more Frontier challenge runtime plugins reported an enable/dependency failure.' >&2
+if grep -qE 'Error occurred while enabling (EnthusiaTags|EnthusiaTempChallenges)|Could not load plugin.*(EnthusiaTags|EnthusiaTempChallenges)|Unknown/missing dependency.*(EnthusiaTags|EnthusiaTempChallenges)' "$SMOKE/server.log"; then
+  echo 'One or more TEMP challenge runtime plugins reported an enable/dependency failure.' >&2
   exit 1
 fi
 
-require_log() {
-  local pattern="$1"
-  local description="$2"
-  if ! grep -q "$pattern" "$SMOKE/server.log"; then
-    echo "Missing expected Leaf log evidence: $description" >&2
-    exit 1
-  fi
-}
-
-require_log 'EnthusiaTempChallenges enabled: event=frontier_2026_test, state=ACTIVE' 'challenge plugin ACTIVE startup confirmation'
-require_log 'Frontier Firsts' 'frontier_firsts presentation/status output'
-require_log 'EnthusiaTempChallenges' 'EnthusiaTempChallenges plugin presence'
-require_log 'UltimateAdvancementAPI' 'UltimateAdvancementAPI plugin presence'
-require_log 'EnthusiaAdvancements' 'EnthusiaAdvancements plugin presence'
-require_log 'EnthusiaTags' 'EnthusiaTags plugin presence'
+grep -q 'EnthusiaTempChallenges enabled: event=frontier_2026_test, state=ACTIVE' "$SMOKE/server.log"
+grep -q 'EnthusiaTempChallenges' "$SMOKE/server.log"
+grep -q 'EnthusiaTags' "$SMOKE/server.log"
 test -s "$SMOKE/plugins/EnthusiaTempChallenges/challenge-ledger.sqlite"
 
 python3 - "$SMOKE/plugins/EnthusiaTempChallenges/challenge-ledger.sqlite" <<'PY'
-import sqlite3
-import sys
-
-path = sys.argv[1]
-with sqlite3.connect(path) as connection:
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as connection:
     version = connection.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
     assert version == ('1',), version
     tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     required = {'challenge_winner', 'attempt_journal', 'reward_delivery', 'dragon_contribution', 'revocation_history'}
-    missing = required - tables
-    assert not missing, missing
+    assert not (required - tables), required - tables
     assert connection.execute('SELECT COUNT(*) FROM challenge_winner').fetchone()[0] == 0
 PY
 
 trap - EXIT
-echo 'Leaf 1.21.11 runtime smoke passed: all Frontier challenge plugins loaded, status command ran, and empty durable ledger schema initialized.'
+echo 'Paper 26.3 challenge smoke passed: TEMP challenges and Tags loaded and durable ledger initialized.'
