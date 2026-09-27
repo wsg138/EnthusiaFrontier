@@ -25,10 +25,8 @@ if (Test-Path -LiteralPath $RepoRoot) {
     Write-Host 'Refreshing existing local deployment checkout...'
     & $git -C $RepoRoot fetch --prune origin $Branch
     if ($LASTEXITCODE -ne 0) { throw 'git fetch failed.' }
-    & $git -C $RepoRoot checkout -f $Branch
-    if ($LASTEXITCODE -ne 0) { throw 'git checkout failed.' }
-    & $git -C $RepoRoot reset --hard "origin/$Branch"
-    if ($LASTEXITCODE -ne 0) { throw 'git reset failed.' }
+    & $git -C $RepoRoot checkout -B $Branch "origin/$Branch"
+    if ($LASTEXITCODE -ne 0) { throw 'git checkout/reset failed.' }
     & $git -C $RepoRoot clean -fdx
     if ($LASTEXITCODE -ne 0) { throw 'git clean failed.' }
 } else {
@@ -48,7 +46,7 @@ Copy-Item -LiteralPath $BuiltZip -Destination $FinalZip -Force
 $sha = (Get-FileHash -LiteralPath $FinalZip -Algorithm SHA256).Hash.ToLowerInvariant()
 Write-Host ''
 Write-Host 'TEST2 TEMP PACKAGE READY' -ForegroundColor Green
-Write-Host "Upload this ZIP to the empty Bloom Test2 root and extract it there:"
+Write-Host 'Upload this ZIP to the empty Bloom Test2 root and extract it there:'
 Write-Host $FinalZip -ForegroundColor Cyan
 Write-Host "SHA-256: $sha"
 Write-Host ''
