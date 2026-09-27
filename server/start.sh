@@ -11,4 +11,5 @@ if [[ ! -f "$JAR" ]]; then
 fi
 ACTUAL="$(sha256sum "$JAR" | awk '{print $1}')"
 [[ "$ACTUAL" == "$SHA" ]] || { echo "Leaf SHA-256 mismatch" >&2; exit 1; }
-exec java ${JAVA_ARGS:--Xms2G -Xmx8G} -jar "$JAR" --nogui
+DEFAULT_JAVA_ARGS="-Xms32G -Xmx32G -XX:+UseZGC -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:+ExitOnOutOfMemoryError -Xlog:gc*:logs/gc-zgc.log:time,uptime,level,tags:filecount=5,filesize=10M -Dterminal.jline=false -Dterminal.ansi=true -DLeaf.enableFMA=true -DLeaf.disable-vanilla-profiler=true -DLeaf.disable-vanilla-debug-feature=true -Duser.timezone=America/Indiana/Indianapolis"
+exec java ${JAVA_ARGS:-$DEFAULT_JAVA_ARGS} -jar "$JAR" --nogui
