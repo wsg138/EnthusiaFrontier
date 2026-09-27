@@ -19,14 +19,18 @@ public record GenerationShieldSettings(
         double recoveryHysteresisMspt,
         List<GenerationShieldLevel> levels) {
 
+    /** Moonrise 1.21.11 loads/generates two chunks beyond its API view distance. */
+    public static final int MINIMUM_MOONRISE_GUARD_OVERHEAD_CHUNKS = 2;
+
     public GenerationShieldSettings {
         Objects.requireNonNull(levels, "levels");
         levels = List.copyOf(levels);
         if (queueCapacity < 128 || queueCapacity > 1_000_000) {
             throw new IllegalArgumentException("generation shield queue capacity must be within 128..1000000");
         }
-        if (extraGuardRadiusChunks < 1 || extraGuardRadiusChunks > 8) {
-            throw new IllegalArgumentException("generation shield extra guard radius must be within 1..8 chunks");
+        if (extraGuardRadiusChunks < MINIMUM_MOONRISE_GUARD_OVERHEAD_CHUNKS || extraGuardRadiusChunks > 8) {
+            throw new IllegalArgumentException(
+                    "generation shield extra guard radius must be within 2..8 chunks for Moonrise 1.21.11");
         }
         if (maxGuardRadiusChunks < 4 || maxGuardRadiusChunks > 40
                 || maxGuardRadiusChunks < extraGuardRadiusChunks) {

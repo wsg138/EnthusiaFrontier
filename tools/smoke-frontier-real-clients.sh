@@ -32,10 +32,9 @@ if text.count(world) != 1:
 text = text.replace(world, "  world:\n    enabled: true\n    core-radius-blocks: 8192", 1)
 margin = "  extra-guard-radius-chunks: 2"
 if text.count(margin) != 1:
-    raise SystemExit("could not identify the generation shield guard margin")
-# Use the smallest valid guard margin while still exercising the actual runtime
-# view/send/simulation-distance buffer. Production calibration keeps its larger margin.
-text = text.replace(margin, "  extra-guard-radius-chunks: 1", 1)
+    raise SystemExit("could not identify the validated Moonrise generation-shield guard margin")
+# Keep the exact minimum validated for Moonrise 1.21.11. With API view/simulation
+# distance 2, Moonrise's load/dependency footprint and Frontier's guard are radius 4.
 path.write_text(text)
 PY
 
@@ -241,7 +240,7 @@ run_case() {
   end_line="$(wc -l < "$SERVER_LOG")"
   local after
   after="$(count_ready)"
-  local expected=$((28 * count))
+  local expected=$((45 * count))
 
   set +e
   python3 - \
@@ -324,7 +323,7 @@ PY
 }
 
 # Each direction starts inside the permanent square and finishes in a distinct virgin
-# frontier edge. Lanes are twelve chunks apart while the runtime guard radius is three
+# frontier edge. Lanes are twelve chunks apart while the runtime guard radius is four
 # for this view/simulation profile, so clients cannot satisfy one another's buffers.
 run_case 1  FrE east   8136  8216
 run_case 10 FrW west  -8120 -8200
@@ -352,7 +351,7 @@ with sqlite3.connect(sys.argv[1]) as connection:
     ready = connection.execute(
         'SELECT COUNT(*) FROM frontier_chunk WHERE deleted_at_ms IS NULL'
     ).fetchone()[0]
-    assert ready >= 28 * (1 + 10 + 20 + 40), ready
+    assert ready >= 45 * (1 + 10 + 20 + 40), ready
 PY
 
 test ! -e "$SERVER/plugins/EnthusiaFrontier/CLEANUP_UNSAFE.latch"

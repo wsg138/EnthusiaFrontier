@@ -35,7 +35,7 @@ class GenerationShieldSettingsTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new GenerationShieldSettings(true, 127, 2, 12, 128, 20, 2.0, levels));
         assertThrows(IllegalArgumentException.class,
-                () -> new GenerationShieldSettings(true, 256, 0, 12, 128, 20, 2.0, levels));
+                () -> new GenerationShieldSettings(true, 256, 1, 12, 128, 20, 2.0, levels));
         assertThrows(IllegalArgumentException.class,
                 () -> new GenerationShieldSettings(true, 256, 3, 2, 128, 20, 2.0, levels));
         assertThrows(IllegalArgumentException.class,
@@ -48,6 +48,14 @@ class GenerationShieldSettingsTest {
                 () -> new GenerationShieldSettings(true, 256, 2, 12, 128, 20, -1.0, levels));
         assertThrows(IllegalArgumentException.class,
                 () -> new GenerationShieldSettings(true, 256, 2, 12, 128, 20, 2.0, List.of()));
+    }
+
+    @Test
+    void loadRejectsGuardMarginBelowValidatedMoonriseFootprint() {
+        YamlConfiguration config = validConfig();
+        config.set("generation-shield.extra-guard-radius-chunks", 1);
+
+        assertThrows(IllegalArgumentException.class, () -> GenerationShieldSettings.load(config));
     }
 
     @Test

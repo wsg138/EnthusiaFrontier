@@ -24,8 +24,9 @@ tracking:
 generation-shield:
   enabled: true
   queue-capacity: 65536
-  # Actual buffer radius follows each player's runtime view/simulation distance plus
-  # this margin, capped below. The margin also protects rollback paths for vehicles.
+  # Moonrise 1.21.11's native player loader can generate two chunks beyond its API
+  # view distance. Frontier therefore requires at least 2 here so the proven-ready
+  # buffer fully covers that native footprint before movement can advance.
   extra-guard-radius-chunks: 2
   max-guard-radius-chunks: 36
   refresh-checks-per-tick: 4096
