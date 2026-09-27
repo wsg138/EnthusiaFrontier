@@ -21,27 +21,48 @@ Use the current main-SMP flags with the fixed Test2 heap:
 
 The committed `logs/` directory exists so the GC log path is valid on the first start.
 
-## Prepare the server root before upload
+## Preferred local preparation
 
-Use a raw current SMP root as the source for only the approved network dependencies/secrets:
+On Lincoln's Windows machine, use the existing read-only `bloom-smp` rclone remote. From the repository root:
 
 ```powershell
-.\prepare-test2.ps1 -SourceSmpRoot 'D:\path\to\raw-current-smp' -BackendPort <TEST2_PORT>
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\prepare-test2-local.ps1 `
+  -BackendPort <TEST2_BACKEND_PORT> `
+  -CreateZip
 ```
 
-The wrapper resolves the current workflow-published Frontier JAR SHA from `BINARY-MANIFEST.yml`, requires the populate/validation helpers to already match that exact artifact, sets the TEMP server identity, runs `populate-runtime.ps1`, and requires the final static validator to pass. It does not rewrite deployment logic or hash pins locally.
+This helper:
+
+- creates an isolated deployment copy at `build/test2-runtime` instead of injecting secrets into tracked repository files;
+- reads only the exact approved dependencies/configuration from the production SMP through `bloom-smp`;
+- never runs rclone `sync`, `move`, `delete` or another production write operation;
+- uses `server/prepare-test2.ps1` and the static validator against that isolated deployment copy;
+- removes its temporary raw-SMP staging directory afterward;
+- optionally creates `build/Test2-TEMP-runtime.zip` for upload.
+
+The `build/` directory is gitignored. The produced runtime/archive contains private deployment material and must not be committed or shared publicly.
+
+## Lower-level preparation
+
+If a separate raw/current SMP root already exists locally, the lower-level helper can still be run inside an isolated copy of `server/`:
+
+```powershell
+.\prepare-test2.ps1 -SourceSmpRoot 'D:\path\to\raw-current-smp' -BackendPort <TEST2_BACKEND_PORT>
+```
+
+It resolves the current workflow-published Frontier JAR SHA from `BINARY-MANIFEST.yml`, requires the populate/validation helpers to already match that exact artifact, sets the TEMP server identity, runs `populate-runtime.ps1`, and requires the final static validator to pass. It does not rewrite deployment logic or hash pins locally.
 
 Do not use the sanitized GitHub server snapshot as `SourceSmpRoot`; private forwarding/Floodgate/LuckPerms/Nexo values are intentionally absent there.
 
 ## Upload
 
-After `TEST2_TEMP_RUNTIME_READY`, upload the contents of this `server/` directory into the completely empty Test2 root. Do not nest the `server` directory itself.
+After `TEST2_TEMP_RUNTIME_READY`, upload the **contents** of `build/test2-runtime/` into the completely empty Test2 root. Do not nest the `test2-runtime` directory itself. If the ZIP was created, upload/extract its contents at the Test2 root.
 
 The first server start must use the committed Leaf `1.21.11-179` runtime and Java 21.
 
 ## Proxy
 
-Patch the live Velocity and VeloTAB files with `../velocity/apply-temp.ps1` using the real Test2 backend host/port. The patcher creates backups, removes stale `FRONTIER_TEST` aliases, creates exactly one `TEMP` backend, and refuses to put TEMP in the normal fallback list.
+Patch the live Velocity and VeloTAB files with `velocity/apply-temp.ps1` using the real Test2 backend host/port. The patcher creates backups, removes stale `FRONTIER_TEST` aliases, creates exactly one `TEMP` backend, and refuses to put TEMP in the normal fallback list.
 
 ## First boot
 
