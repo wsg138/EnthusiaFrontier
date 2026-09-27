@@ -6,7 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import net.enthusia.frontier.domain.ChunkKey;
 
 /**
@@ -70,7 +70,7 @@ public final class GenerationBufferCoordinator {
     }
 
     /** Charges observed generation immediately but exposes readiness only after lifecycle durability. */
-    public boolean observeGenerated(ChunkKey key, CompletableFuture<Void> durableCommit) {
+    public boolean observeGenerated(ChunkKey key, CompletionStage<Void> durableCommit) {
         return shield.observeGenerated(
                 Objects.requireNonNull(key, "key"),
                 Objects.requireNonNull(durableCommit, "durableCommit"));

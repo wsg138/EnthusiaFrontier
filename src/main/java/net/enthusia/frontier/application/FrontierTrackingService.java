@@ -4,10 +4,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import net.enthusia.frontier.domain.ActivityKind;
 import net.enthusia.frontier.domain.ChunkKey;
@@ -41,22 +39,22 @@ public final class FrontierTrackingService {
     }
 
     /**
-     * Records generated lifecycle state and exposes the exact durable-commit boundary to
-     * generation safety. The returned future is completed by the ledger journal only after
-     * the batch containing this generated mutation has committed.
+     * Records generated lifecycle state and gives generation safety the exact durable-commit
+     * boundary without exposing Frontier's mutable completion object as retained state.
      */
-    public Optional<DurableGenerationObservation> recordGeneratedDurably(
+    public boolean recordGeneratedDurably(
             String worldName,
             UUID worldUuid,
             int chunkX,
-            int chunkZ) {
+            int chunkZ,
+            DurableGenerationObserver observer) {
+        Objects.requireNonNull(observer, "observer");
         FrontierMutation.Generated mutation = generatedMutation(worldName, worldUuid, chunkX, chunkZ);
         if (mutation == null) {
-            return Optional.empty();
+            return false;
         }
-        return Optional.of(new DurableGenerationObservation(
-                mutation.key(),
-                journal.submitDurable(mutation)));
+        observer.observe(mutation.key(), journal.submitDurable(mutation));
+        return true;
     }
 
     public int recordActivity(
@@ -115,12 +113,5 @@ public final class FrontierTrackingService {
 
     private static ChunkKey key(UUID worldUuid, int chunkX, int chunkZ) {
         return new ChunkKey(Objects.requireNonNull(worldUuid, "worldUuid").toString(), chunkX, chunkZ);
-    }
-
-    public record DurableGenerationObservation(ChunkKey key, CompletableFuture<Void> committed) {
-        public DurableGenerationObservation {
-            Objects.requireNonNull(key, "key");
-            Objects.requireNonNull(committed, "committed");
-        }
     }
 }

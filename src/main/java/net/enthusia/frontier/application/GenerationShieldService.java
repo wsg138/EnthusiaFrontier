@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -146,7 +147,7 @@ public final class GenerationShieldService implements AutoCloseable {
      *
      * @return true only for the first pending observation of a not-yet-ready managed chunk
      */
-    public synchronized boolean observeGenerated(ChunkKey key, CompletableFuture<Void> durableCommit) {
+    public synchronized boolean observeGenerated(ChunkKey key, CompletionStage<Void> durableCommit) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(durableCommit, "durableCommit");
         if (stopped || !managedChunk.test(key)) {

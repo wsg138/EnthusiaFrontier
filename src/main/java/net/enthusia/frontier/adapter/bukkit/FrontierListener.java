@@ -1,6 +1,7 @@
 package net.enthusia.frontier.adapter.bukkit;
 
 import java.util.Objects;
+import net.enthusia.frontier.application.DurableGenerationObserver;
 import net.enthusia.frontier.application.FrontierTrackingService;
 import net.enthusia.frontier.application.GenerationBufferCoordinator;
 import net.enthusia.frontier.domain.ActivityKind;
@@ -18,7 +19,7 @@ import org.bukkit.event.world.ChunkLoadEvent;
 /** Thin Bukkit event adapter. Event handlers only enqueue immutable application mutations. */
 public final class FrontierListener implements Listener {
     private final FrontierTrackingService tracking;
-    private final GenerationBufferCoordinator generationBuffers;
+    private final DurableGenerationObserver generationObserver;
 
     public FrontierListener(FrontierTrackingService tracking) {
         this(tracking, null);
@@ -28,7 +29,9 @@ public final class FrontierListener implements Listener {
             FrontierTrackingService tracking,
             GenerationBufferCoordinator generationBuffers) {
         this.tracking = Objects.requireNonNull(tracking, "tracking");
-        this.generationBuffers = generationBuffers;
+        this.generationObserver = generationBuffers == null
+                ? null
+                : (key, durableCommit) -> generationBuffers.observeGenerated(key, durableCommit);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -36,7 +39,7 @@ public final class FrontierListener implements Listener {
         if (!event.isNewChunk()) {
             return;
         }
-        if (generationBuffers == null) {
+        if (generationObserver == null) {
             tracking.recordGenerated(
                     event.getWorld().getName(),
                     event.getWorld().getUID(),
@@ -46,12 +49,11 @@ public final class FrontierListener implements Listener {
         }
 
         tracking.recordGeneratedDurably(
-                        event.getWorld().getName(),
-                        event.getWorld().getUID(),
-                        event.getChunk().getX(),
-                        event.getChunk().getZ())
-                .ifPresent(observation -> generationBuffers.observeGenerated(
-                        observation.key(), observation.committed()));
+                event.getWorld().getName(),
+                event.getWorld().getUID(),
+                event.getChunk().getX(),
+                event.getChunk().getZ(),
+                generationObserver);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
