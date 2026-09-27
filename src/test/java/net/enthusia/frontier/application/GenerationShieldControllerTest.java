@@ -53,6 +53,11 @@ class GenerationShieldControllerTest {
         }
 
         @Override
+        public boolean observeReady(ChunkKey key) {
+            return false;
+        }
+
+        @Override
         public CompletableFuture<Void> markReady(ChunkKey key) {
             return CompletableFuture.completedFuture(null);
         }
