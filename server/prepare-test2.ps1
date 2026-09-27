@@ -20,28 +20,20 @@ function Get-CurrentFrontierHash {
 function Align-FrontierHashPins {
     param([string]$ExpectedHash)
 
-    $populatePath = Join-Path $Root 'populate-runtime.ps1'
-    $populate = [System.IO.File]::ReadAllText($populatePath)
-    $populate = [regex]::Replace(
-        $populate,
-        "Copy-Verified \$FrontierJarPath \$frontierTarget '[0-9a-f]{64}'",
-        "Copy-Verified `$FrontierJarPath `$frontierTarget '$ExpectedHash'"
-    )
-    $populate = [regex]::Replace(
-        $populate,
-        "Assert-Sha256 \$frontierTarget '[0-9a-f]{64}'",
-        "Assert-Sha256 `$frontierTarget '$ExpectedHash'"
-    )
-    [System.IO.File]::WriteAllText($populatePath, $populate, $Utf8)
+    # The runtime-publishing workflow advances the JAR and manifest atomically, but the
+    # older helper scripts still contain the pre-publication hash. Align those local
+    # helper pins with the current workflow-published manifest before validation.
+    $legacyHash = '74b90cafbd96cdbd9a51d07bc897b223161eab87bb7014416d662250442aeefa'
 
-    $validatorPath = Join-Path $Root 'validate-runtime.ps1'
-    $validator = [System.IO.File]::ReadAllText($validatorPath)
-    $validator = [regex]::Replace(
-        $validator,
-        "('plugins\\\\EnthusiaFrontier-0\.1\.1\.jar'=)'[0-9a-f]{64}'",
-        "`$1'$ExpectedHash'"
-    )
-    [System.IO.File]::WriteAllText($validatorPath, $validator, $Utf8)
+    foreach ($name in @('populate-runtime.ps1', 'validate-runtime.ps1')) {
+        $path = Join-Path $Root $name
+        $text = [System.IO.File]::ReadAllText($path)
+        if (-not $text.Contains($legacyHash) -and -not $text.Contains($ExpectedHash)) {
+            throw "$name does not contain either the known legacy Frontier hash or the current expected hash. Refusing an ambiguous patch."
+        }
+        $text = $text.Replace($legacyHash, $ExpectedHash)
+        [System.IO.File]::WriteAllText($path, $text, $Utf8)
+    }
 }
 
 function Set-Test2Identity {
