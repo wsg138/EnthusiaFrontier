@@ -108,6 +108,7 @@ jobs:
             python3 - <<'PY'
           from pathlib import Path
           import os
+          import re
 
           manifest = Path('server/BINARY-MANIFEST.yml')
           text = manifest.read_text()
@@ -122,6 +123,16 @@ jobs:
           for line in Path('server/PLUGIN-SHA256SUMS.txt').read_text().splitlines():
               sha, path = line.split(None, 1)
               hashes[Path(path).name] = sha
+
+          # Keep the top-level deployable plugin manifest synchronized with the
+          # exact JARs that were just built. The marked provenance block below is
+          # supplemental metadata, not a competing artifact identity.
+          for name, sha in hashes.items():
+              pattern = rf'(?m)^  {re.escape(name)}:\s*[0-9a-f]{{64}}\s*$'
+              replacement = f'  {name}: {sha}'
+              text, count = re.subn(pattern, replacement, text, count=1)
+              if count != 1:
+                  raise SystemExit(f'Expected exactly one top-level plugin hash for {name}, found {count}')
 
           block = f'''{begin}
           challenge_runtime:
