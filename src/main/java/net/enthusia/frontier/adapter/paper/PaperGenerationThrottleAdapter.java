@@ -6,7 +6,7 @@ import net.enthusia.frontier.application.GenerationThrottlePort;
 import net.enthusia.frontier.domain.GenerationLimits;
 
 /**
- * Narrow reflective adapter for Paper/Leaf runtime generation controls.
+ * Narrow reflective adapter for Paper runtime generation controls.
  * All unstable server-internal names are intentionally isolated in this class.
  */
 public final class PaperGenerationThrottleAdapter implements GenerationThrottlePort {
@@ -18,6 +18,7 @@ public final class PaperGenerationThrottleAdapter implements GenerationThrottleP
     private final Field concurrentGenerationsField;
     private final double originalGenerationRate;
     private final int originalConcurrentGenerations;
+    private final Object mutationLock = new Object();
     private boolean restored;
 
     private PaperGenerationThrottleAdapter(
@@ -55,20 +56,24 @@ public final class PaperGenerationThrottleAdapter implements GenerationThrottleP
     }
 
     @Override
-    public synchronized void apply(GenerationLimits limits) throws IllegalAccessException {
-        generationRateField.setDouble(basicConfiguration, limits.maxGenerateRate());
-        concurrentGenerationsField.setInt(advancedConfiguration, limits.maxConcurrentGenerations());
-        restored = false;
+    public void apply(GenerationLimits limits) throws IllegalAccessException {
+        synchronized (mutationLock) {
+            generationRateField.setDouble(basicConfiguration, limits.maxGenerateRate());
+            concurrentGenerationsField.setInt(advancedConfiguration, limits.maxConcurrentGenerations());
+            restored = false;
+        }
     }
 
     @Override
-    public synchronized void restore() throws IllegalAccessException {
-        if (restored) {
-            return;
+    public void restore() throws IllegalAccessException {
+        synchronized (mutationLock) {
+            if (restored) {
+                return;
+            }
+            generationRateField.setDouble(basicConfiguration, originalGenerationRate);
+            concurrentGenerationsField.setInt(advancedConfiguration, originalConcurrentGenerations);
+            restored = true;
         }
-        generationRateField.setDouble(basicConfiguration, originalGenerationRate);
-        concurrentGenerationsField.setInt(advancedConfiguration, originalConcurrentGenerations);
-        restored = true;
     }
 
     public double originalGenerationRate() {
