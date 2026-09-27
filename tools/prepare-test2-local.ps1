@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][int]$BackendPort,
+    [Parameter(Mandatory = $true)][ValidateRange(1, 65535)][int]$BackendPort,
     [string]$SourceRemote = 'bloom-smp',
     [string]$RclonePath,
     [switch]$CreateZip
@@ -35,7 +35,7 @@ function Invoke-Rclone([string[]]$Arguments) {
 function Copy-RemoteFile([string]$RelativePath) {
     $destination = Join-Path $StageRoot ($RelativePath -replace '/', '\')
     New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-    Invoke-Rclone @('copyto', "${SourceRemote}:$RelativePath", $destination, '--no-traverse', '--retries', '3', '--low-level-retries', '10')
+    Invoke-Rclone -Arguments @('copyto', "${SourceRemote}:$RelativePath", $destination, '--no-traverse', '--retries', '3', '--low-level-retries', '10')
 }
 
 $Rclone = Resolve-Rclone
@@ -70,11 +70,9 @@ try {
 
     $nexoDestination = Join-Path $StageRoot 'plugins\Nexo'
     New-Item -ItemType Directory -Path $nexoDestination -Force | Out-Null
-    Invoke-Rclone @('copy', "${SourceRemote}:plugins/Nexo", $nexoDestination, '--retries', '3', '--low-level-retries', '10')
+    Invoke-Rclone -Arguments @('copy', "${SourceRemote}:plugins/Nexo", $nexoDestination, '--retries', '3', '--low-level-retries', '10')
 
     & (Join-Path $OutputRoot 'prepare-test2.ps1') -SourceSmpRoot $StageRoot -BackendPort $BackendPort
-    if ($LASTEXITCODE -ne 0) { throw "prepare-test2.ps1 failed with exit code $LASTEXITCODE" }
-
     Write-Host "Prepared deployable Test2 root: $OutputRoot" -ForegroundColor Green
 
     if ($CreateZip) {
