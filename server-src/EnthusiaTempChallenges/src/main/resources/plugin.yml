@@ -1,7 +1,7 @@
 name: EnthusiaTempChallenges
 version: 0.2.0-frontier.1
 main: org.enthusia.tempchallenges.paper.TempChallengesPlugin
-api-version: '1.21'
+api-version: '26.2'
 author: Enthusia
 load: POSTWORLD
 softdepend: [Floodgate, GrimAC, EnthusiaStaff, EnthusiaAdvancements, EnthusiaTags, LuckPerms]
