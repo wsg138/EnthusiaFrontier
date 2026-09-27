@@ -8,7 +8,7 @@ SMOKE="${RUNNER_TEMP:-/tmp}/frontier-real-client-smoke"
 SERVER="$SMOKE/server"
 SERVER_LOG="$SMOKE/server.log"
 PORT=25590
-MINEFLAYER_VERSION=4.42.2
+MINEFLAYER_VERSION=4.39.0
 CLIENT_TIMEOUT_MS=600000
 
 rm -rf "$SMOKE"
@@ -144,11 +144,11 @@ run_case() {
   done
   [[ -s "$case_dir/positioned.json" ]] || { kill "$client_pid" 2>/dev/null || true; return 1; }
 
-  # Mineflayer's current 26.3 fork can connect and observe teleports but its
-  # continuous movement packets are rejected by Paper 26.3 as invalid. Frontier
-  # guards server teleports too, so keep the real network clients connected and
-  # repeatedly request the destination through the server until each guarded
-  # frontier buffer is ready and the client actually observes arrival.
+  # Keep the real 26.3 network clients connected while Frontier guards repeated
+  # server-side teleport requests at the generation boundary. The pinned
+  # upstream Mineflayer commit acknowledges forced teleports on the proper
+  # client-tick cadence, so this exercises Frontier without synthetic client
+  # movement corrupting the protocol evidence.
   touch "$case_dir/go"
   for _ in $(seq 1 240); do
     [[ -s "$case_dir/result.json" ]] && break
