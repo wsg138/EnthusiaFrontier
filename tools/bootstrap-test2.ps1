@@ -51,4 +51,4 @@ Write-Host 'Upload this ZIP to the empty Bloom Test2 root and extract it there:'
 Write-Host $FinalZip -ForegroundColor Cyan
 Write-Host "SHA-256: $sha"
 Write-Host ''
-Write-Host 'Do not start Test2 until the Bloom Java runtime is set to Java 21.' -ForegroundColor Yellow
+Write-Host 'Keep the Bloom Java runtime set to Java 25 for Minecraft/Paper 26.3.' -ForegroundColor Yellow
