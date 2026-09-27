@@ -6,12 +6,13 @@ The preferred prepared output is `build/test2-runtime/`, created by `tools/prepa
 
 ## Runtime
 
-- Java 21
-- Leaf 1.21.11 build 179
-- Paper + Leaf + Gale + Purpur configs present
-- Leaf Secure Seed enabled
+- Java 25
+- workflow-pinned Paper 26.3 runtime (`paper-26.3.jar`)
+- Paper configs plus only the plugin/config files needed by TEMP
 - Velocity modern forwarding configured during deployment preparation
 - Java + Bedrock through the existing Velocity/Geyser/Floodgate network
+
+The deployable runtime and plugin JAR hashes are authoritative in `BINARY-MANIFEST.yml`. Preparation fails closed if they do not match.
 
 ## World
 
@@ -21,60 +22,66 @@ The preferred prepared output is `build/test2-runtime/`, created by `tools/prepa
 - End enabled immediately
 - Elytras disabled by the bundled datapack policy, including natural End Ship item frames, dropped Elytras and player inventories
 - no pregeneration
-- fresh fixed terrain seed
-- private Leaf 1024-bit Secure Seed feature seed for ores/structures
+- fresh random Paper world seed on first creation
 - Frontier cleanup: real deletion after 1 untouched day
 
-The ordinary `level-seed` controls terrain. With Leaf Secure Seed enabled, structures use Leaf's separate private feature seed. On the first clean boot, `/locate structure minecraft:stronghold` must return a reachable stronghold inside the ±5000 Overworld border before normal players are admitted. See `FIRST-BOOT-CHECKLIST.md`.
+On the first clean boot, `/locate structure minecraft:stronghold` must return a reachable stronghold inside the ±5000 Overworld border before normal players are admitted. If not, regenerate the three fresh worlds with another random seed rather than widening the border. See `FIRST-BOOT-CHECKLIST.md`.
 
 ## Normal server layout
 
-The prepared folder contains the normal runtime/config structure:
+The prepared folder contains the normal runtime/config structure, including:
 
+- `paper-26.3.jar`
 - `server.properties`
 - `eula.txt`
 - `bukkit.yml`
 - `spigot.yml`
-- `purpur.yml`
 - `commands.yml`
 - `permissions.yml`
 - `config/paper-global.yml`
 - `config/paper-world-defaults.yml`
-- `config/leaf-global.yml`
-- `config/gale-global.yml`
-- `config/gale-world-defaults.yml`
-- `plugins/` with the finalized Frontier challenge/advancement/Tags JARs and all plugin config folders
+- `plugins/` with the finalized minimal TEMP runtime and configs
 - `world/datapacks/` with the border + no-Elytra bootstrap
 - fresh ops/whitelist/ban files
 - startup, population and validation helpers
 
-## Already committed challenge runtime
+Legacy Leaf 1.21.11 runtime/config requirements are not part of the Paper 26.3 deployment.
 
-The branch already contains and hash-locks:
+## Challenge runtime
+
+The Paper 26.3 TEMP challenge runtime contains and hash-locks:
 
 - `plugins/EnthusiaTempChallenges-0.2.0-frontier.1.jar`
-- `plugins/EnthusiaAdvancements-1.0.0-frontier.jar`
-- `plugins/UltimateAdvancementAPI-2.8.1.jar`
 - `plugins/EnthusiaTags.jar`
-- their TEMP-specific configs/advancement tree
+- their TEMP-specific configs
 
-These are authoritative for TEMP. `populate-runtime.ps1` deliberately refuses to replace them with older SMP copies.
+`EnthusiaAdvancements` and `UltimateAdvancementAPI` are intentionally omitted on 26.3 because the old NMS-backed presentation layer is not 26.3-compatible. Winner persistence does not depend on it: portable challenge ownership is recorded through a context-free/global LuckPerms entitlement and the local challenge ledger.
+
+`populate-runtime.ps1` deliberately refuses to replace the workflow-built challenge JARs with older SMP copies.
 
 ## Prepare Test2
 
-Preferred path from the repository root on Lincoln's Windows machine:
+Preferred path on Lincoln's Windows machine:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\prepare-test2-local.ps1 `
-  -BackendPort <TEST2_BACKEND_PORT> `
-  -CreateZip
+$u='https://raw.githubusercontent.com/wsg138/EnthusiaFrontier/refs/heads/server/frontier-test-runtime/tools/bootstrap-test2.ps1'
+$p="$env:TEMP\bootstrap-test2.ps1"
+Invoke-WebRequest -UseBasicParsing $u -OutFile $p
+& $p
+```
+
+The bootstrap refreshes the exact branch and defaults to the Test2 backend port `25566`. The lower-level equivalent with the existing checkout is:
+
+```powershell
+$r="$env:LOCALAPPDATA\Enthusia-TEMP-Deploy\EnthusiaFrontier"
+git -C $r fetch origin server/frontier-test-runtime
+git -C $r reset --hard origin/server/frontier-test-runtime
+& "$r\tools\prepare-test2-local.ps1" -BackendPort 25566 -CreateZip
 ```
 
 The helper uses the existing read-only `bloom-smp` rclone remote to copy only the approved live dependencies/configuration into an isolated, gitignored deployment copy. It does not copy SMP worlds, playerdata, inventories, CoreProtect data, playtime databases, or other progression state. It never performs a production rclone write/sync/delete operation.
 
-A successful preparation ends with `TEST2_TEMP_RUNTIME_READY` and creates `build/test2-runtime/`; with `-CreateZip` it also creates `build/Test2-TEMP-runtime.zip`.
-
-`prepare-test2.ps1` remains the lower-level helper for cases where a separate raw/current SMP root already exists locally. Run it only against an isolated copy of this template, not the tracked template itself, because the prepared runtime contains private deployment material.
+A successful preparation prints both `TEMP_RUNTIME_READY` and `TEST2_TEMP_RUNTIME_READY` and creates `build/test2-runtime/`; with `-CreateZip` it also creates `build/Test2-TEMP-runtime.zip`.
 
 Private deployment data is intentionally never committed:
 
@@ -82,11 +89,11 @@ Private deployment data is intentionally never committed:
 - Floodgate `key.pem`
 - LuckPerms DB credentials
 - Nexo hosting secrets
-- generated secure feature seed
+- generated live world seed
 
 ## Starting
 
-`start.sh` downloads and SHA-256 verifies official Leaf 1.21.11 build 179 if it is absent, then starts the server with the Test2 32 GB/ZGC JVM defaults unless the panel supplies `JAVA_ARGS`. The branch runtime-binary workflow also publishes that exact Leaf JAR into `server/` when GitHub Actions is available.
+Use Java 25 and launch `paper-26.3.jar`. The default Test2 JVM arguments use a fixed 32 GB heap with ZGC. Do not use the old `-DLeaf.*` startup flags.
 
 Complete `FIRST-BOOT-CHECKLIST.md` before normal players join.
 
@@ -98,4 +105,4 @@ Use the repository-level TEMP deployment files against the live proxy rather tha
 - `velocity/apply-temp.ps1`
 - `velocity/plugins/velocitab/temp-group.yml`
 
-The patcher creates backups, adds exactly one `TEMP` backend, keeps TEMP out of the normal fallback list, and installs the dedicated TEMP VeloTAB group. Players then join with `/server TEMP`.
+The patcher creates backups, adds exactly one `TEMP = "170.205.24.14:25566"` backend, keeps TEMP out of the normal fallback list, and installs the dedicated TEMP VeloTAB group. Players then join with `/server TEMP`.
