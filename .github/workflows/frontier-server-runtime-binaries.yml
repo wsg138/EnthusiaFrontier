@@ -6,6 +6,8 @@ on:
     paths:
       - 'src/**'
       - 'tools/smoke-frontier-runtime.sh'
+      - 'tools/smoke-frontier-real-clients.sh'
+      - 'tools/frontier-real-client-load.js'
       - 'build.gradle.kts'
       - 'gradle.properties'
       - 'settings.gradle.kts'
@@ -22,7 +24,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,6 +34,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -51,8 +57,6 @@ jobs:
           printf '%s\n' "$FIRST_SHA" > "$RUNNER_TEMP/frontier.sha256"
           echo "First build SHA-256: $FIRST_SHA"
 
-          # Rebuild the exact same source from clean outputs. The deployable JAR
-          # must be byte-for-byte reproducible before this workflow may publish it.
           gradle clean check shadowJar --no-daemon
           mapfile -t second_jars < <(find build/libs -maxdepth 1 -type f -name 'EnthusiaFrontier-*.jar' | sort)
           test "${#second_jars[@]}" -eq 1
@@ -91,12 +95,37 @@ jobs:
             -o "$RUNNER_TEMP/leaf-1.21.11-179.jar"
           echo '5da79782215c1a25edcd7c73b3523b7ecb7f4b86dc8a5846a176ed69bc2cd020  '"$RUNNER_TEMP/leaf-1.21.11-179.jar" | sha256sum -c -
 
+      - name: Install pinned Mineflayer 1.21.11 client
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/frontier-mineflayer"
+          npm install \
+            --prefix "$RUNNER_TEMP/frontier-mineflayer" \
+            --no-save \
+            --package-lock=false \
+            --ignore-scripts \
+            mineflayer@4.37.1
+          NODE_PATH="$RUNNER_TEMP/frontier-mineflayer/node_modules" \
+            node -e "const p=require('mineflayer/package.json'); if (p.version !== '4.37.1') process.exit(1);"
+
       - name: Boot and restart exact Frontier runtime on Leaf
         shell: bash
         run: |
           set -euo pipefail
           chmod +x tools/smoke-frontier-runtime.sh
           tools/smoke-frontier-runtime.sh \
+            "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" \
+            "$RUNNER_TEMP/leaf-1.21.11-179.jar"
+
+      - name: Exercise 1/10/20/40 real Java clients through Frontier boundary
+        shell: bash
+        env:
+          NODE_PATH: ${{ runner.temp }}/frontier-mineflayer/node_modules
+        run: |
+          set -euo pipefail
+          chmod +x tools/smoke-frontier-real-clients.sh
+          tools/smoke-frontier-real-clients.sh \
             "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" \
             "$RUNNER_TEMP/leaf-1.21.11-179.jar"
 
@@ -110,6 +139,11 @@ jobs:
           path: |
             ${{ runner.temp }}/frontier-runtime-smoke/cycle-*.log
             ${{ runner.temp }}/frontier-runtime-smoke/*.sha256
+            ${{ runner.temp }}/frontier-real-client-smoke/server.log
+            ${{ runner.temp }}/frontier-real-client-smoke/*.sha256
+            ${{ runner.temp }}/frontier-real-client-smoke/case-*/client.log
+            ${{ runner.temp }}/frontier-real-client-smoke/case-*/result.json
+            ${{ runner.temp }}/frontier-real-client-smoke/case-*/evidence.txt
 
       - name: Upload exact runtime binaries
         uses: actions/upload-artifact@v4
@@ -136,7 +170,8 @@ jobs:
             REMOTE=origin/server/frontier-test-runtime
 
             if ! git diff --quiet "$GITHUB_SHA" "$REMOTE" -- \
-              src tools/smoke-frontier-runtime.sh build.gradle.kts gradle.properties settings.gradle.kts \
+              src tools/smoke-frontier-runtime.sh tools/smoke-frontier-real-clients.sh \
+              tools/frontier-real-client-load.js build.gradle.kts gradle.properties settings.gradle.kts \
               .github/workflows/frontier-server-runtime-binaries.yml; then
               echo 'Frontier source/runtime validation definition changed after this run started; refusing to publish stale binaries.' >&2
               exit 1
