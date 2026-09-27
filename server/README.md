@@ -1,6 +1,6 @@
-# Enthusia Frontier Test server root
+# Enthusia TEMP server root
 
-This directory is laid out like the root of a normal Leaf/Paper Minecraft server. Copy the contents of `server/` directly into the Pterodactyl server root.
+This directory is laid out like the root of a normal Leaf/Paper Minecraft server. Copy the contents of `server/` directly into the empty Test2/Pterodactyl server root.
 
 ## Runtime
 
@@ -15,7 +15,7 @@ This directory is laid out like the root of a normal Leaf/Paper Minecraft server
 
 - Overworld: **-5000..+5000** (**10,000 blocks wide**)
 - Nether: **-2500..+2500** (**5,000 blocks wide**)
-- End: **-2500..+2500** (**5,000 blocks wide**)
+- End: **-500..+500** (**1,000 blocks wide; main island only**)
 - End enabled immediately
 - Elytras disabled by the bundled datapack policy, including natural End Ship item frames, dropped Elytras and player inventories
 - no pregeneration
@@ -54,40 +54,23 @@ The branch already contains and hash-locks:
 - `plugins/EnthusiaAdvancements-1.0.0-frontier.jar`
 - `plugins/UltimateAdvancementAPI-2.8.1.jar`
 - `plugins/EnthusiaTags.jar`
-- their Frontier-specific configs/advancement tree
+- their TEMP-specific configs/advancement tree
 
-These are authoritative for Frontier Test. `populate-runtime.ps1` deliberately refuses to replace them with older SMP copies.
+These are authoritative for TEMP. `populate-runtime.ps1` deliberately refuses to replace them with older SMP copies.
 
-## Populate the remaining network/runtime files
+## Prepare Test2
 
-`populate-runtime.ps1` takes a **raw/current SMP server root** and copies only the regular dependencies/secrets that this server needs. It hash-verifies every known JAR and does not copy SMP worlds, playerdata, inventories, CoreProtect data, playtime DBs or other progression state.
-
-It supplies:
-
-- CoreProtect
-- InventoryRollbackPlus
-- EnthusiaPlaytime
-- LuckPerms
-- Floodgate-Spigot + private Floodgate key
-- BedrockWindChargeFix
-- Nexo + live emoji/resource-pack assets/config
-- PlaceholderAPI
-- TAB
-- Velocity forwarding secret
-- actual backend port
-- verified Leaf 1.21.11-179 if missing
-
-The Frontier JAR is published to `server/plugins/` by the branch runtime-binary workflow. You can also explicitly provide an exact JAR with `-FrontierJarPath`.
+For the actual Test2 deployment, use `prepare-test2.ps1`. It takes a **raw/current SMP server root** and copies only the approved regular dependencies/secrets that TEMP needs. It hash-verifies known JARs and does not copy SMP worlds, playerdata, inventories, CoreProtect data, playtime DBs or other progression state.
 
 Example:
 
 ```powershell
-.\populate-runtime.ps1 `
+.\prepare-test2.ps1 `
   -SourceSmpRoot 'D:\SMP' `
   -BackendPort 25568
 ```
 
-The script finishes by running `validate-runtime.ps1`. A successful run prints `FRONTIER_TEST_RUNTIME_READY`.
+A successful preparation ends with `TEST2_TEMP_RUNTIME_READY`. See `TEST2-DEPLOYMENT.md` for the panel memory/JVM settings and deployment sequence.
 
 Private deployment data is intentionally never committed:
 
@@ -105,11 +88,10 @@ Complete `FIRST-BOOT-CHECKLIST.md` before normal players join.
 
 ## Velocity
 
-The separate repository-level `velocity/` directory contains:
+Use the repository-level TEMP deployment files against the live proxy rather than replacing its whole configuration:
 
-- `velocity.toml` — Frontier-aware reference configuration
-- `velocity.toml.fragment` — minimal backend entry
-- `apply-frontier-test.ps1` — idempotent live Velocity + VeloTAB patcher with backups/rollback
-- `plugins/velocitab/frontier-test-group.yml` — dedicated Frontier Test tab group
+- `velocity/velocity.toml.temp.fragment`
+- `velocity/apply-temp.ps1`
+- `velocity/plugins/velocitab/temp-group.yml`
 
-Use the patch script against the live proxy rather than blindly replacing the live proxy config, because internal TEST/BUILD targets can change independently of this branch.
+The patcher creates backups, adds exactly one `TEMP` backend, keeps TEMP out of the normal fallback list, and installs the dedicated TEMP VeloTAB group. Players then join with `/server TEMP`.
