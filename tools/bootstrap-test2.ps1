@@ -11,6 +11,7 @@ $WorkRoot = Join-Path $env:LOCALAPPDATA 'Enthusia-TEMP-Deploy'
 $RepoRoot = Join-Path $WorkRoot 'EnthusiaFrontier'
 $Desktop = [Environment]::GetFolderPath('Desktop')
 $FinalZip = Join-Path $Desktop 'Test2-TEMP-runtime.zip'
+$PowerShellEngine = (Get-Process -Id $PID).Path
 
 function Require-Command([string]$Name) {
     $cmd = Get-Command $Name -ErrorAction SilentlyContinue
@@ -36,7 +37,7 @@ if (Test-Path -LiteralPath $RepoRoot) {
 }
 
 Write-Host "Preparing Test2 runtime for backend port $BackendPort..."
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot 'tools\prepare-test2-local.ps1') -BackendPort $BackendPort -CreateZip
+& $PowerShellEngine -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot 'tools\prepare-test2-local.ps1') -BackendPort $BackendPort -CreateZip
 if ($LASTEXITCODE -ne 0) { throw 'Test2 runtime preparation failed.' }
 
 $BuiltZip = Join-Path $RepoRoot 'build\Test2-TEMP-runtime.zip'
