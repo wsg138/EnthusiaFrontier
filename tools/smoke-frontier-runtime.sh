@@ -2,17 +2,17 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PLUGIN_JAR="${1:?usage: smoke-frontier-runtime.sh <plugin-jar> <leaf-jar>}"
-LEAF_JAR="${2:?usage: smoke-frontier-runtime.sh <plugin-jar> <leaf-jar>}"
+PLUGIN_JAR="${1:?usage: smoke-frontier-runtime.sh <plugin-jar> <paper-jar>}"
+PAPER_JAR="${2:?usage: smoke-frontier-runtime.sh <plugin-jar> <paper-jar>}"
 SMOKE="${RUNNER_TEMP:-/tmp}/frontier-runtime-smoke"
 
 rm -rf "$SMOKE"
 mkdir -p "$SMOKE/server/plugins/EnthusiaFrontier"
 cp "$PLUGIN_JAR" "$SMOKE/server/plugins/EnthusiaFrontier-0.1.1.jar"
 cp "$ROOT/src/main/resources/config.yml" "$SMOKE/server/plugins/EnthusiaFrontier/config.yml"
-cp "$LEAF_JAR" "$SMOKE/server/leaf.jar"
+cp "$PAPER_JAR" "$SMOKE/server/paper.jar"
 sha256sum "$SMOKE/server/plugins/EnthusiaFrontier-0.1.1.jar" > "$SMOKE/plugin.sha256"
-sha256sum "$SMOKE/server/leaf.jar" > "$SMOKE/leaf.sha256"
+sha256sum "$SMOKE/server/paper.jar" > "$SMOKE/paper.sha256"
 
 cat > "$SMOKE/server/eula.txt" <<'EOF'
 eula=true
@@ -32,7 +32,7 @@ hardcore=false
 level-name=world
 level-type=minecraft:flat
 max-players=2
-motd=Enthusia Sentinel isolated smoke test
+motd=Enthusia Frontier Paper 26.3 isolated smoke test
 network-compression-threshold=256
 online-mode=false
 prevent-proxy-connections=false
@@ -69,7 +69,7 @@ cleanup() {
   rc=$?
   stop_if_running
   if (( rc != 0 )); then
-    echo '--- EnthusiaFrontier Leaf runtime smoke failed ---' >&2
+    echo '--- EnthusiaFrontier Paper 26.3 runtime smoke failed ---' >&2
     for log in "$SMOKE"/cycle-*.log; do
       [[ -f "$log" ]] || continue
       echo "--- ${log##*/} ---" >&2
@@ -88,12 +88,11 @@ run_cycle() {
   rm -f "$pipe"
   mkfifo "$pipe"
 
-  # Open the FIFO read/write so the Java process can start before the first command.
   exec {console_fd}<>"$pipe"
   LAST_FD="$console_fd"
 
   pushd "$SMOKE/server" >/dev/null
-  java -Xms512M -Xmx1536M -jar leaf.jar --nogui <"$pipe" >"$log" 2>&1 &
+  java -Xms512M -Xmx1536M -jar paper.jar --nogui <"$pipe" >"$log" 2>&1 &
   local pid=$!
   popd >/dev/null
   LAST_PID="$pid"
@@ -105,13 +104,13 @@ run_cycle() {
       break
     fi
     if ! kill -0 "$pid" 2>/dev/null; then
-      echo "Leaf exited before reaching Done on cycle $cycle." >&2
+      echo "Paper 26.3 exited before reaching Done on cycle $cycle." >&2
       return 1
     fi
     sleep 1
   done
   if [[ "$started" != true ]]; then
-    echo "Leaf did not reach Done within 180 seconds on cycle $cycle." >&2
+    echo "Paper 26.3 did not reach Done within 180 seconds on cycle $cycle." >&2
     return 1
   fi
 
@@ -123,7 +122,7 @@ run_cycle() {
     local load_passed=false
     for _ in $(seq 1 360); do
       if grep -q 'FRONTIER_GENERATION_LOAD_FAILED' "$log"; then
-        echo 'Frontier real-Leaf generation load suite reported failure.' >&2
+        echo 'Frontier Paper 26.3 generation load suite reported failure.' >&2
         return 1
       fi
       if grep -q 'FRONTIER_GENERATION_LOAD_OK' "$log"; then
@@ -131,7 +130,7 @@ run_cycle() {
         break
       fi
       if ! kill -0 "$pid" 2>/dev/null; then
-        echo 'Leaf exited during the Frontier generation load suite.' >&2
+        echo 'Paper 26.3 exited during the Frontier generation load suite.' >&2
         return 1
       fi
       sleep 1
@@ -154,7 +153,7 @@ run_cycle() {
     sleep 1
   done
   if kill -0 "$pid" 2>/dev/null; then
-    echo "Leaf did not stop cleanly on cycle $cycle." >&2
+    echo "Paper 26.3 did not stop cleanly on cycle $cycle." >&2
     return 1
   fi
   wait "$pid"
@@ -172,7 +171,7 @@ run_cycle() {
 }
 
 # The first cycle runs 1/10/20/40 synthetic requester cases through the actual
-# production shield and Leaf async generation adapter. It is a functional aggregate
+# production shield and Paper async generation adapter. It is a functional aggregate
 # admission proof, not a network-client or production-hardware performance benchmark.
 run_cycle 1 true
 
@@ -216,5 +215,5 @@ PY
 test ! -e "$SMOKE/server/plugins/EnthusiaFrontier/CLEANUP_UNSAFE.latch"
 
 trap - EXIT
-echo 'FRONTIER_REAL_LEAF_RUNTIME_OK'
-echo 'Leaf 1.21.11 runtime smoke passed: exact Frontier JAR enabled, 1/10/20/40 aggregate generation cases passed, SQLite stayed healthy, shutdown was clean, and durable readiness reopened after restart.'
+echo 'FRONTIER_REAL_PAPER_RUNTIME_OK'
+echo 'Paper 26.3 runtime smoke passed: exact Frontier JAR enabled, 1/10/20/40 aggregate generation cases passed, SQLite stayed healthy, shutdown was clean, and durable readiness reopened after restart.'
