@@ -4,11 +4,12 @@ Do not open the temporary server to normal players until the required checks bel
 
 ## Runtime
 
-- Java 21.
-- Leaf `1.21.11-179` only; verify SHA-256 against `BINARY-MANIFEST.yml`.
-- `config/leaf-global.yml` must have `misc.secure-seed.enabled: true`.
+- Java 25.
+- Paper `26.3` only; verify the exact runtime SHA-256 against `BINARY-MANIFEST.yml`.
+- Confirm no legacy `leaf-1.21.11-179.jar` or Leaf-only startup flags/config requirements remain.
 - Confirm no `REPLACE_WITH_*` or `<REDACTED>` placeholders remain in runtime configs.
 - Confirm `plugins/floodgate/key.pem` exists locally and is not committed.
+- Keep the generated world seed private until the TEMP event is complete.
 
 ## Fresh world / borders
 
@@ -27,9 +28,9 @@ Expected border widths (`/worldborder get` reports full width):
 - Nether: `5000` → coordinates `-2500..+2500`
 - End: `1000` → coordinates `-500..+500` (main island only)
 
-Leaf Secure Seed uses a separate private 1024-bit feature seed for structures and ores. The fixed `level-seed` therefore does **not** preselect the stronghold position. Before normal players join, the located stronghold must be inside X/Z `-5000..+5000` with enough margin to reach the structure normally. If it is outside the border, delete all three fresh world directories and regenerate once with a new secure feature seed; do not widen the ±5000 Overworld border.
+The checked-in TEMP template leaves `level-seed=` blank so Paper creates a fresh random world. Before normal players join, the located stronghold must be inside X/Z `-5000..+5000` with enough margin to reach the structure normally. If it is outside the border, stop the server, delete the three fresh world directories (`world`, `world_nether`, `world_the_end`), and regenerate with another fresh random seed. Do **not** widen the ±5000 Overworld border.
 
-Keep the generated secure feature seed private. Do not commit it or publish `/seed` output.
+Do not publish `/seed` output before the TEMP event is complete.
 
 ## End / Elytra rule
 
@@ -44,7 +45,7 @@ Keep the generated secure feature seed private. Do not commit it or publish `/se
 
 ## Proxy / Java / Bedrock
 
-- `TEMP` exists exactly once in live Velocity and points at the real Test2 allocation.
+- `TEMP` exists exactly once in live Velocity and points at `170.205.24.14:25566`.
 - `TEMP` is **not** in the normal Velocity `try` fallback list.
 - Dedicated TEMP VeloTAB group loads with no raw/missing placeholders.
 - `/server TEMP` routes to Test2.
@@ -67,11 +68,20 @@ Required baseline plugins:
 - Nexo
 - PlaceholderAPI
 - TAB
-- the finalized EnthusiaTempChallenges plugin
-- EnthusiaAdvancements
-- UltimateAdvancementAPI
+- EnthusiaTempChallenges
+
+`EnthusiaAdvancements` and `UltimateAdvancementAPI` are intentionally **not** part of the Paper 26.3 TEMP runtime. Their NMS-backed presentation path is not yet 26.3-compatible. The authoritative portable first-reward entitlement is written as a context-free/global LuckPerms node; custom advancement presentation can be reconciled later without changing the recorded winner.
 
 There should be no Chunky/pregeneration, homes/teleports, LumaGuilds, economy/market stack, Plan or copied SMP gameplay suite unless deliberately added later.
+
+## Challenge rewards
+
+- Run `/tempchallenge status` and confirm `frontier_2026_test` is `ACTIVE`.
+- Confirm first Elytra remains locked.
+- Test a reversible/admin first-award flow before players are admitted.
+- Confirm the winner survives restart and duplicate award attempts do not create a second winner.
+- Confirm the portable reward is a global/context-free LuckPerms entitlement, not a `server=EnthusiaTEMP`-scoped node.
+- Tags may provide presentation on TEMP; item/inventory progression must never transfer to the main SMP.
 
 ## Storage isolation
 
@@ -79,7 +89,7 @@ There should be no Chunky/pregeneration, homes/teleports, LumaGuilds, economy/ma
 - CoreProtect: local SQLite.
 - Playtime: local SQLite; rewards/export off.
 - InventoryRollbackPlus: local files.
-- LuckPerms: shared network MariaDB with a unique TEMP/Test2 server identity.
+- LuckPerms: shared network MariaDB with unique `EnthusiaTEMP` server identity; portable first entitlements themselves remain context-free/global.
 - No production world/player/inventory/plugin-runtime databases copied into this server.
 
 ## Frontier destructive controls
