@@ -1,4 +1,4 @@
-# Enthusia Frontier Test — first boot acceptance
+# Enthusia TEMP — first boot acceptance
 
 Do not open the temporary server to normal players until the required checks below pass.
 
@@ -25,7 +25,7 @@ Expected border widths (`/worldborder get` reports full width):
 
 - Overworld: `10000` → coordinates `-5000..+5000`
 - Nether: `5000` → coordinates `-2500..+2500`
-- End: `5000` → coordinates `-2500..+2500`
+- End: `1000` → coordinates `-500..+500` (main island only)
 
 Leaf Secure Seed uses a separate private 1024-bit feature seed for structures and ores. The fixed `level-seed` therefore does **not** preselect the stronghold position. Before normal players join, the located stronghold must be inside X/Z `-5000..+5000` with enough margin to reach the structure normally. If it is outside the border, delete all three fresh world directories and regenerate once with a new secure feature seed; do not widen the ±5000 Overworld border.
 
@@ -35,17 +35,19 @@ Keep the generated secure feature seed private. Do not commit it or publish `/se
 
 - End must be accessible immediately; there is no scheduled End opening.
 - Verify the natural stronghold portal can be reached inside the Overworld border.
-- Verify the End border is `5000` blocks wide / `-2500..+2500`.
+- Verify the End border is `1000` blocks wide / `-500..+500`.
 - Confirm the bundled `enthusia_test:tick` function is active.
+- Confirm an End gateway cannot be used to remain outside the main-island border.
 - Locate or spawn an Elytra item frame in a controlled admin test and confirm the Elytra is removed.
 - Drop/give an Elytra in a controlled admin test and confirm it is removed from item entities/player inventories.
 - Elytra server-first must remain locked by the challenge plugin.
 
 ## Proxy / Java / Bedrock
 
-- `FRONTIER_TEST` exists exactly once in live Velocity and points at the real EnthusiaState allocation.
-- `FRONTIER_TEST` is **not** in the normal Velocity `try` fallback list.
-- Dedicated VeloTAB group loads with no raw/missing placeholders.
+- `TEMP` exists exactly once in live Velocity and points at the real Test2 allocation.
+- `TEMP` is **not** in the normal Velocity `try` fallback list.
+- Dedicated TEMP VeloTAB group loads with no raw/missing placeholders.
+- `/server TEMP` routes to Test2.
 - Join through Velocity from Java.
 - Join through the normal Geyser endpoint from Bedrock.
 - Confirm Floodgate identity is preserved rather than creating a second offline Java identity.
@@ -77,7 +79,7 @@ There should be no Chunky/pregeneration, homes/teleports, LumaGuilds, economy/ma
 - CoreProtect: local SQLite.
 - Playtime: local SQLite; rewards/export off.
 - InventoryRollbackPlus: local files.
-- LuckPerms: shared network MariaDB with `server: EnthusiaFrontierTest`.
+- LuckPerms: shared network MariaDB with a unique TEMP/Test2 server identity.
 - No production world/player/inventory/plugin-runtime databases copied into this server.
 
 ## Frontier destructive controls
