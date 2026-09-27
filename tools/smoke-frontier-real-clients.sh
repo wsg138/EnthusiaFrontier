@@ -29,13 +29,13 @@ text = path.read_text()
 world = "  world:\n    enabled: true\n    core-radius-blocks: 100000"
 if text.count(world) != 1:
     raise SystemExit("could not identify the production overworld core setting")
-text = text.replace(world, "  world:\n    enabled: true\n    core-radius-blocks: 4096", 1)
+text = text.replace(world, "  world:\n    enabled: true\n    core-radius-blocks: 8192", 1)
 margin = "  extra-guard-radius-chunks: 2"
 if text.count(margin) != 1:
     raise SystemExit("could not identify the generation shield guard margin")
-# Minimize virgin chunks per client while still exercising the actual runtime
-# view/simulation-distance buffer. Production calibration keeps its larger margin.
-text = text.replace(margin, "  extra-guard-radius-chunks: 0", 1)
+# Use the smallest valid guard margin while still exercising the actual runtime
+# view/send/simulation-distance buffer. Production calibration keeps its larger margin.
+text = text.replace(margin, "  extra-guard-radius-chunks: 1", 1)
 path.write_text(text)
 PY
 
@@ -192,7 +192,7 @@ run_case() {
 
   local index lane username x z
   for ((index = 0; index < count; index++)); do
-    lane=$(( (2 * index - (count - 1)) * 48 ))
+    lane=$(( (2 * index - (count - 1)) * 192 ))
     username="${prefix}$(printf '%02d' "$index")"
     case "$direction" in
       east|west)
@@ -241,7 +241,7 @@ run_case() {
   end_line="$(wc -l < "$SERVER_LOG")"
   local after
   after="$(count_ready)"
-  local expected=$((15 * count))
+  local expected=$((28 * count))
 
   set +e
   python3 - \
@@ -324,12 +324,12 @@ PY
 }
 
 # Each direction starts inside the permanent square and finishes in a distinct virgin
-# frontier edge. Lanes are six chunks apart while the test runtime guard radius is two,
-# so different clients cannot satisfy one another's safety buffers.
-run_case 1  FrE east   4040  4120
-run_case 10 FrW west  -4024 -4104
-run_case 20 FrS south  4040  4120
-run_case 40 FrN north -4024 -4104
+# frontier edge. Lanes are twelve chunks apart while the runtime guard radius is three
+# for this view/simulation profile, so clients cannot satisfy one another's buffers.
+run_case 1  FrE east   8136  8216
+run_case 10 FrW west  -8120 -8200
+run_case 20 FrS south  8136  8216
+run_case 40 FrN north -8120 -8200
 
 printf 'frontier status\n' >&"$CONSOLE_FD"
 printf 'stop\n' >&"$CONSOLE_FD"
@@ -352,7 +352,7 @@ with sqlite3.connect(sys.argv[1]) as connection:
     ready = connection.execute(
         'SELECT COUNT(*) FROM frontier_chunk WHERE deleted_at_ms IS NULL'
     ).fetchone()[0]
-    assert ready >= 15 * (1 + 10 + 20 + 40), ready
+    assert ready >= 28 * (1 + 10 + 20 + 40), ready
 PY
 
 test ! -e "$SERVER/plugins/EnthusiaFrontier/CLEANUP_UNSAFE.latch"
