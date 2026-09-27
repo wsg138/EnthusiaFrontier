@@ -1,7 +1,10 @@
 package net.enthusia.frontier.adapter.bukkit;
 
+import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -87,7 +90,7 @@ public final class GenerationShieldMovementListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityTeleport(EntityTeleportEvent event) {
-        Player rider = directPlayerPassenger(event.getEntity());
+        Player rider = playerPassenger(event.getEntity());
         if (rider != null && !allow(rider, event.getTo())) {
             event.setCancelled(true);
         }
@@ -96,7 +99,7 @@ public final class GenerationShieldMovementListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onVehicleMove(VehicleMoveEvent event) {
         Vehicle vehicle = event.getVehicle();
-        Player rider = directPlayerPassenger(vehicle);
+        Player rider = playerPassenger(vehicle);
         if (rider == null || sameChunk(event.getFrom(), event.getTo()) || allow(rider, event.getTo())) {
             return;
         }
@@ -161,6 +164,26 @@ public final class GenerationShieldMovementListener implements Listener {
         return Math.addExact(runtimeDistance, extraGuardRadiusChunks);
     }
 
+    /** Returns a player anywhere in the passenger tree while tolerating malformed cycles. */
+    static Player playerPassenger(Entity entity) {
+        Objects.requireNonNull(entity, "entity");
+        Set<Entity> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        ArrayDeque<Entity> pending = new ArrayDeque<>();
+        visited.add(entity);
+        pending.addAll(entity.getPassengers());
+        while (!pending.isEmpty()) {
+            Entity passenger = pending.removeFirst();
+            if (!visited.add(passenger)) {
+                continue;
+            }
+            if (passenger instanceof Player player) {
+                return player;
+            }
+            pending.addAll(passenger.getPassengers());
+        }
+        return null;
+    }
+
     private void notifyBlocked(Player player, GenerationBufferStatus status) {
         long now = System.nanoTime();
         long previous = lastMessageNanos.getOrDefault(player.getUniqueId(), Long.MIN_VALUE);
@@ -172,15 +195,6 @@ public final class GenerationShieldMovementListener implements Listener {
                 ? "Frontier exploration is paused for server safety."
                 : "Frontier terrain is generating...";
         player.sendActionBar(Component.text(message));
-    }
-
-    private static Player directPlayerPassenger(Entity entity) {
-        for (Entity passenger : entity.getPassengers()) {
-            if (passenger instanceof Player player) {
-                return player;
-            }
-        }
-        return null;
     }
 
     private static boolean sameChunk(Location first, Location second) {
