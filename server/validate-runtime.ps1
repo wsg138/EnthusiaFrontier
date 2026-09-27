@@ -63,7 +63,7 @@ if ($properties -notmatch '(?m)^feature-level-seed=\s*$') {
 $borderFunction = [System.IO.File]::ReadAllText((Join-Path $Root 'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\load.mcfunction'))
 if ($borderFunction -notmatch 'execute in minecraft:overworld run worldborder set 10000(?:\s|$)') { throw 'Overworld border must be 10000 wide (+/-5000).' }
 if ($borderFunction -notmatch 'execute in minecraft:the_nether run worldborder set 5000(?:\s|$)') { throw 'Nether border must be 5000 wide (+/-2500).' }
-if ($borderFunction -notmatch 'execute in minecraft:the_end run worldborder set 5000(?:\s|$)') { throw 'End border must be 5000 wide (+/-2500).' }
+if ($borderFunction -notmatch 'execute in minecraft:the_end run worldborder set 1000(?:\s|$)') { throw 'End border must be 1000 wide (+/-500) for main-island-only access.' }
 
 $elytraPolicy = [System.IO.File]::ReadAllText((Join-Path $Root 'world\datapacks\enthusia-frontier-test\data\enthusia_test\function\tick.mcfunction'))
 if ($elytraPolicy -notmatch 'item_frame.*minecraft:elytra') { throw 'No-Elytra policy is missing the End Ship item-frame guard.' }
@@ -89,7 +89,7 @@ Require-File 'plugins\floodgate\key.pem' | Out-Null
 Check-Hash 'leaf-1.21.11-179.jar' '5da79782215c1a25edcd7c73b3523b7ecb7f4b86dc8a5846a176ed69bc2cd020'
 
 $known = @{
-    'plugins\EnthusiaFrontier-0.1.1.jar'='74b90cafbd96cdbd9a51d07bc897b223161eab87bb7014416d662250442aeefa'
+    'plugins\EnthusiaFrontier-0.1.1.jar'='4c4e6e6704a8b884c9a7d06544c9295616408dd69b9ec1dba757db308c5aa990'
     'plugins\CoreProtect-24.1.jar'='a7137839a5b20d993e168381dee22136c4ca77979c9d5627ccbdb7c4058d737f'
     'plugins\InventoryRollbackPlus-1.8.2.jar'='2caada5cd90e86767466dd67c5f1b9616adafdccfe561da44d84985e9ffac43d'
     'plugins\EnthusiaPlaytime-3.7.2.jar'='d6d79b11588c9d60ece254798480e83b7c286b1909d138c803db11f6a1ec9344'
@@ -119,6 +119,6 @@ foreach ($pattern in @('Chunky*.jar','LumaGuilds*.jar','EnthusiaTeleport*.jar'))
     if (Get-ChildItem -LiteralPath $plugins -Filter $pattern -File -ErrorAction SilentlyContinue) { throw "Forbidden minimal-server plugin present: $pattern" }
 }
 
-Write-Host 'FRONTIER_TEST_RUNTIME_READY' -ForegroundColor Green
-Write-Host 'Runtime files, workflow-pinned binary hashes, Secure Seed config, corrected borders, no-Elytra policy and challenge runtime all validate.'
+Write-Host 'TEMP_RUNTIME_READY' -ForegroundColor Green
+Write-Host 'Runtime files, workflow-pinned binary hashes, Secure Seed config, borders, no-Elytra policy and challenge runtime all validate.'
 Write-Host 'Still perform FIRST-BOOT-CHECKLIST.md live checks before admitting players.'
