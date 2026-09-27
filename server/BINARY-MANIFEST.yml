@@ -19,10 +19,18 @@ plugins:
   EnthusiaAdvancements-1.0.0-frontier.jar: 9733423a2f0fa0bbaa15f7accca8390007e88f50affaff97aa6d0f24f18a1eae
   UltimateAdvancementAPI-2.8.1.jar: d0e17a0228ceba0b9cb837b321c41678df058a669150eb18a421d674f1152052
   EnthusiaTags.jar: 8aee3c250bdb66f9cb9641e3a5c2cbdb0336a96fca5afdc0488735bd8af13fe4
+# FRONTIER-PLUGIN-ARTIFACT-BEGIN
+frontier_plugin_runtime:
+  source_commit: 5ced1554b46b2f4fdd1c34f5355b6da67923feb9
+  java: 21
+  minecraft: 1.21.11
+  artifact: EnthusiaFrontier-0.1.1.jar
+  sha256: 4c4e6e6704a8b884c9a7d06544c9295616408dd69b9ec1dba757db308c5aa990
+# FRONTIER-PLUGIN-ARTIFACT-END
 
 # FRONTIER-CHALLENGE-ARTIFACTS-BEGIN
 challenge_runtime:
-  source_commit: f0a29870dba2bd3acd0da3a5d7ce92c9524e2797
+  source_commit: 0717fbd2d4ae8fe57dc0866303c34c6087cf272e
   java: 21
   paper_api: 1.21.11-R0.1-SNAPSHOT
   sqlite_jdbc: 3.53.4.0
@@ -40,12 +48,3 @@ challenge_runtime:
     UltimateAdvancementAPI-2.8.1.jar: d0e17a0228ceba0b9cb837b321c41678df058a669150eb18a421d674f1152052
     EnthusiaTags.jar: 8aee3c250bdb66f9cb9641e3a5c2cbdb0336a96fca5afdc0488735bd8af13fe4
 # FRONTIER-CHALLENGE-ARTIFACTS-END
-
-# FRONTIER-PLUGIN-ARTIFACT-BEGIN
-frontier_plugin_runtime:
-  source_commit: 5ced1554b46b2f4fdd1c34f5355b6da67923feb9
-  java: 21
-  minecraft: 1.21.11
-  artifact: EnthusiaFrontier-0.1.1.jar
-  sha256: 4c4e6e6704a8b884c9a7d06544c9295616408dd69b9ec1dba757db308c5aa990
-# FRONTIER-PLUGIN-ARTIFACT-END
