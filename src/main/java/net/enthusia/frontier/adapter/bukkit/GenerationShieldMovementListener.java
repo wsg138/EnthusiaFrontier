@@ -34,8 +34,10 @@ import org.bukkit.plugin.java.JavaPlugin;
  * Fail-closed movement boundary for the generation shield.
  *
  * <p>Normal movement and player/entity teleports are stopped before unsafe advancement.
- * VehicleMoveEvent is not cancellable, so a configurable generated margin protects the
- * previous safe center while the vehicle is rolled back on the next server task.</p>
+ * Current buffers are prepared while players are still inside a chunk, then only the
+ * newly exposed leading strip is opportunistically prewarmed in the likely direction
+ * of travel. VehicleMoveEvent is not cancellable, so unsafe vehicle advancement is
+ * rolled back on the next server task.</p>
  */
 public final class GenerationShieldMovementListener implements Listener {
     private static final long MESSAGE_COOLDOWN_NANOS = 1_000_000_000L;
@@ -111,7 +113,17 @@ public final class GenerationShieldMovementListener implements Listener {
     public void onVehicleMove(VehicleMoveEvent event) {
         Vehicle vehicle = event.getVehicle();
         Player rider = playerPassenger(vehicle);
-        if (rider == null || sameChunk(event.getFrom(), event.getTo()) || allow(rider, event.getTo())) {
+        if (rider == null) {
+            return;
+        }
+        if (sameChunk(event.getFrom(), event.getTo())) {
+            GenerationBufferStatus current = prepare(rider, event.getTo());
+            if (current == GenerationBufferStatus.READY) {
+                prewarmAhead(rider, event.getFrom(), event.getTo());
+            }
+            return;
+        }
+        if (allow(rider, event.getTo())) {
             return;
         }
         UUID vehicleId = vehicle.getUniqueId();
@@ -195,11 +207,15 @@ public final class GenerationShieldMovementListener implements Listener {
             return;
         }
 
+        int currentX = to.getBlockX() >> 4;
+        int currentZ = to.getBlockZ() >> 4;
         buffers.prewarm(
                 requester(player),
                 world.getUID().toString(),
-                (to.getBlockX() >> 4) + stepX,
-                (to.getBlockZ() >> 4) + stepZ,
+                currentX,
+                currentZ,
+                currentX + stepX,
+                currentZ + stepZ,
                 radius);
     }
 
@@ -241,9 +257,15 @@ public final class GenerationShieldMovementListener implements Listener {
             return;
         }
         lastMessageNanos.put(player.getUniqueId(), now);
-        String message = status == GenerationBufferStatus.FAIL_CLOSED
-                ? "Frontier exploration is paused for server safety."
-                : "Frontier terrain is generating...";
+        String message;
+        if (status == GenerationBufferStatus.FAIL_CLOSED) {
+            message = "Frontier exploration is paused for server safety.";
+        } else {
+            int remaining = buffers.pendingChunks(requester(player));
+            message = remaining > 0
+                    ? "Frontier terrain is catching up (" + remaining + " chunks)..."
+                    : "Frontier terrain is catching up...";
+        }
         player.sendActionBar(Component.text(message));
     }
 
