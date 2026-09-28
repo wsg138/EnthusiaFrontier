@@ -43,6 +43,9 @@ public final class GenerationBufferCoordinator {
                     : GenerationBufferStatus.PENDING;
         }
 
+        if (existing != null) {
+            shield.cancelQueued(requesterId);
+        }
         PendingBuffer pending = new PendingBuffer(center, new LinkedHashSet<>(), new LinkedHashSet<>());
         byRequester.put(requesterId, pending);
         for (int deltaX = -radius; deltaX <= radius; deltaX++) {
@@ -176,6 +179,7 @@ public final class GenerationBufferCoordinator {
         String requester = Objects.requireNonNull(requesterId, "requesterId");
         byRequester.remove(requester);
         prewarmByRequester.remove(requester);
+        shield.cancelQueued(requester);
     }
 
     public synchronized int pendingBuffers() {
