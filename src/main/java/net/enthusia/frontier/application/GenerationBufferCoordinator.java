@@ -42,12 +42,6 @@ public final class GenerationBufferCoordinator {
                     ? GenerationBufferStatus.READY
                     : GenerationBufferStatus.PENDING;
         }
-        if (existing != null && !existing.missing().isEmpty()) {
-            // Do not abandon an in-progress square and append another full square behind it.
-            // Replacing pending state leaves the original queued chunks running anyway and
-            // can make rapid direction changes look permanently stuck behind stale work.
-            return GenerationBufferStatus.PENDING;
-        }
 
         PendingBuffer pending = new PendingBuffer(center, new LinkedHashSet<>(), new LinkedHashSet<>());
         byRequester.put(requesterId, pending);
