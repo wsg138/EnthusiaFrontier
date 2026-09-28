@@ -19,8 +19,8 @@ tracking:
   mutation-batch-size: 512
 
 # Primary safety mechanism. These are WHOLE-SERVER limits, not per-player limits.
-# The values below are conservative staging starting points, not production-calibrated
-# claims. Validate them with the 1/10/20/40 explorer load suite on Enthusia hardware.
+# Frontier warms the current safety buffer before the player reaches a boundary and
+# then queues only the newly exposed leading strip for ordinary one-chunk travel.
 generation-shield:
   enabled: true
   queue-capacity: 65536
@@ -35,24 +35,30 @@ generation-shield:
   levels:
     - name: healthy
       enter-mspt: 0.0
-      chunks-per-second: 8.0
+      chunks-per-second: 16.0
       max-concurrent: 4
     - name: elevated
       enter-mspt: 25.0
-      chunks-per-second: 4.0
+      chunks-per-second: 10.0
       max-concurrent: 3
     - name: pressured
       enter-mspt: 35.0
-      chunks-per-second: 2.0
+      chunks-per-second: 6.0
       max-concurrent: 2
     - name: critical
       enter-mspt: 45.0
+      chunks-per-second: 4.0
+      max-concurrent: 1
+    # 50 ms/tick is the 20 TPS budget. New frontier generation pauses here so
+    # exploration cannot keep pushing an already-over-budget server into a lag spiral.
+    - name: emergency
+      enter-mspt: 50.0
       chunks-per-second: 0.0
       max-concurrent: 0
 
 # Secondary defense-in-depth only. Paper/Moonrise applies these per player, so this
 # section must never be treated as the aggregate server generation budget. In Paper,
-# a generation rate of 0 is not a pause; the global shield above owns true pausing.
+# a generation rate of 0 is not a true pause; the global shield owns emergency pausing.
 throttle:
   require-supported-adapter: true
   sample-period-ticks: 20
@@ -72,6 +78,10 @@ throttle:
       max-concurrent-generations: 2
     - name: critical
       enter-mspt: 45.0
+      max-generation-rate: 4.0
+      max-concurrent-generations: 1
+    - name: emergency
+      enter-mspt: 50.0
       max-generation-rate: 2.0
       max-concurrent-generations: 1
 
