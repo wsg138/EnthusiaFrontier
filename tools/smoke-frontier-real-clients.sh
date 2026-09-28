@@ -10,6 +10,7 @@ SERVER_LOG="$SMOKE/server.log"
 PORT=25590
 MINEFLAYER_VERSION=4.42.2
 CLIENT_TIMEOUT_MS=600000
+CLIENT_RETRY_INTERVAL_SECONDS=5
 
 rm -rf "$SMOKE"
 mkdir -p "$SERVER/plugins/EnthusiaFrontier"
@@ -120,6 +121,7 @@ teleport_case_players() {
 run_case() {
   local count="$1" prefix="$2" direction="$3" start_axis="$4" target_axis="$5"
   local case_dir="$SMOKE/case-$count"
+  local drive_attempts=$(( (CLIENT_TIMEOUT_MS + CLIENT_RETRY_INTERVAL_SECONDS * 1000 - 1) / (CLIENT_RETRY_INTERVAL_SECONDS * 1000) + 1 ))
   mkdir -p "$case_dir"
 
   node "$ROOT/tools/frontier-real-client-load.js" \
@@ -145,16 +147,18 @@ run_case() {
   [[ -s "$case_dir/positioned.json" ]] || { kill "$client_pid" 2>/dev/null || true; return 1; }
 
   # Keep real 26.3 network clients connected while Frontier guards repeated
-  # server-side teleport requests at the generation boundary. The pinned fork
-  # supplies protocol 777 support, while frontier-real-client-load.js patches
-  # its disposable teleport echo to the next client tick before Mineflayer loads.
+  # server-side teleport requests at the generation boundary. The synthetic
+  # load suite already exercises command-pressure behavior, so this real-client
+  # gate retries at a measured cadence instead of flooding a shield capped at
+  # eight generation starts per second. Keep driving for the full client timeout
+  # so a chunk that becomes ready late still receives a final teleport attempt.
   touch "$case_dir/go"
-  for _ in $(seq 1 240); do
+  for _ in $(seq 1 "$drive_attempts"); do
     [[ -s "$case_dir/result.json" ]] && break
     kill -0 "$client_pid" 2>/dev/null || break
     teleport_case_players "$count" "$prefix" "$direction" "$target_axis"
     printf 'frontier status\n' >&"$CONSOLE_FD"
-    sleep 1
+    sleep "$CLIENT_RETRY_INTERVAL_SECONDS"
   done
 
   set +e
