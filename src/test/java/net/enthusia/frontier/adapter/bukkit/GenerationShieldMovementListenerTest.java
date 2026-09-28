@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -79,7 +80,7 @@ class GenerationShieldMovementListenerTest {
         listener.onMove(event);
 
         verify(buffers).prepare("player:" + PLAYER_ID, WORLD_ID.toString(), 0, 0, 9);
-        verify(buffers, never()).prewarm(any(), any(), any(Integer.class), any(Integer.class), any(Integer.class));
+        verify(buffers, never()).prewarm(any(), any(), anyInt(), anyInt(), anyInt());
         verify(event, never()).setCancelled(true);
     }
 
