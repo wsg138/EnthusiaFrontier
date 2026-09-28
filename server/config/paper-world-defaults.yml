@@ -23,11 +23,16 @@ anticheat:
     - deepslate_redstone_ore
     - emerald_ore
     - deepslate_emerald_ore
+    - ancient_debris
+    - nether_gold_ore
+    - nether_quartz_ore
     lava-obscures: true
-    max-block-height: 64
-    replacement-blocks:
-    - stone
-    - deepslate
+    # 128 covers Nether quartz/gold/debris generation while also protecting
+    # all valuable Overworld ores below the same height.
+    max-block-height: 128
+    # engine-mode 1 ignores replacement-blocks and uses the dimension's native
+    # filler (stone/deepslate, netherrack, or end_stone).
+    replacement-blocks: []
     update-radius: 2
     use-permission: false
 chunks:
