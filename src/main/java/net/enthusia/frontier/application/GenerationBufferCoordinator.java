@@ -196,6 +196,10 @@ public final class GenerationBufferCoordinator {
         return pending == null ? 0 : pending.missing().size();
     }
 
+    public boolean generationPaused() {
+        return shield.limits().paused();
+    }
+
     private boolean submitOrResolve(String requesterId, PendingBuffer pending, ChunkKey key) {
         GenerationAdmission admission = shield.request(requesterId, key);
         return switch (admission) {
