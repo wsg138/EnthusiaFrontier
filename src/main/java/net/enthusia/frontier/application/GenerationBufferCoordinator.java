@@ -103,6 +103,15 @@ public final class GenerationBufferCoordinator {
                 Objects.requireNonNull(durableCommit, "durableCommit"));
     }
 
+    /**
+     * Marks an already-existing chunk as hot-ready for this process without inserting it
+     * into Frontier's cleanup ledger. Existing terrain may predate Frontier and therefore
+     * must not become cleanup-eligible merely because a client caused it to load.
+     */
+    public boolean observeLoadedExisting(ChunkKey key) {
+        return readiness.observeReady(Objects.requireNonNull(key, "key"));
+    }
+
     /** Refreshes pending readiness away from movement events with a bounded check budget. */
     public synchronized void refresh(int maxChecks) {
         if (maxChecks < 1) {

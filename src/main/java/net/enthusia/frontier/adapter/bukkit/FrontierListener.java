@@ -5,6 +5,7 @@ import net.enthusia.frontier.application.DurableGenerationObserver;
 import net.enthusia.frontier.application.FrontierTrackingService;
 import net.enthusia.frontier.application.GenerationBufferCoordinator;
 import net.enthusia.frontier.domain.ActivityKind;
+import net.enthusia.frontier.domain.ChunkKey;
 import org.bukkit.block.Block;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -19,6 +20,7 @@ import org.bukkit.event.world.ChunkLoadEvent;
 /** Thin Bukkit event adapter. Event handlers only enqueue immutable application mutations. */
 public final class FrontierListener implements Listener {
     private final FrontierTrackingService tracking;
+    private final GenerationBufferCoordinator generationBuffers;
     private final DurableGenerationObserver generationObserver;
 
     public FrontierListener(FrontierTrackingService tracking) {
@@ -29,6 +31,7 @@ public final class FrontierListener implements Listener {
             FrontierTrackingService tracking,
             GenerationBufferCoordinator generationBuffers) {
         this.tracking = Objects.requireNonNull(tracking, "tracking");
+        this.generationBuffers = generationBuffers;
         this.generationObserver = generationBuffers == null
                 ? null
                 : (key, durableCommit) -> generationBuffers.observeGenerated(key, durableCommit);
@@ -37,6 +40,7 @@ public final class FrontierListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkLoad(ChunkLoadEvent event) {
         if (!event.isNewChunk()) {
+            observeExistingManagedChunk(event);
             return;
         }
         if (generationObserver == null) {
@@ -81,6 +85,20 @@ public final class FrontierListener implements Listener {
         Block clicked = event.getClickedBlock();
         if (clicked != null) {
             protect(clicked, ActivityKind.BLOCK_INTERACT);
+        }
+    }
+
+    private void observeExistingManagedChunk(ChunkLoadEvent event) {
+        if (generationBuffers == null) {
+            return;
+        }
+        ChunkKey key = new ChunkKey(
+                event.getWorld().getUID().toString(),
+                event.getChunk().getX(),
+                event.getChunk().getZ());
+        var policy = tracking.worldPolicies().get(event.getWorld().getName());
+        if (policy != null && policy.isManaged(key)) {
+            generationBuffers.observeLoadedExisting(key);
         }
     }
 

@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
@@ -133,6 +134,65 @@ class FrontierListenerTest {
                 eq(new ChunkKey(uuid.toString(), 7, 8)),
                 any());
         assertEquals(1, repository.applied.size());
+    }
+
+    @Test
+    void existingManagedChunkBecomesHotReadyWithoutEnteringCleanupLedger() {
+        RecordingRepository repository = new RecordingRepository();
+        MutationJournal journal = new MutationJournal(repository, new NoopLatch(), 128, 32, ignored -> { });
+        FrontierTrackingService tracking = new FrontierTrackingService(
+                Map.of("world", new CoreBoundaryPolicy(0)),
+                0,
+                journal,
+                Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
+        GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
+        FrontierListener listener = new FrontierListener(tracking, buffers);
+        World world = mock(World.class);
+        Chunk chunk = mock(Chunk.class);
+        UUID uuid = UUID.fromString("00000000-0000-0000-0000-000000000238");
+        when(world.getName()).thenReturn("world");
+        when(world.getUID()).thenReturn(uuid);
+        when(chunk.getX()).thenReturn(12);
+        when(chunk.getZ()).thenReturn(-3);
+
+        journal.start();
+        ChunkLoadEvent existingLoad = mock(ChunkLoadEvent.class);
+        when(existingLoad.isNewChunk()).thenReturn(false);
+        when(existingLoad.getWorld()).thenReturn(world);
+        when(existingLoad.getChunk()).thenReturn(chunk);
+        listener.onChunkLoad(existingLoad);
+        journal.close();
+
+        verify(buffers).observeLoadedExisting(new ChunkKey(uuid.toString(), 12, -3));
+        assertEquals(0, repository.applied.size());
+    }
+
+    @Test
+    void existingPermanentCoreChunkDoesNotPolluteFrontierReadiness() {
+        RecordingRepository repository = new RecordingRepository();
+        MutationJournal journal = new MutationJournal(repository, new NoopLatch(), 128, 32, ignored -> { });
+        FrontierTrackingService tracking = new FrontierTrackingService(
+                Map.of("world", new CoreBoundaryPolicy(1000)),
+                0,
+                journal,
+                Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
+        GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
+        FrontierListener listener = new FrontierListener(tracking, buffers);
+        World world = mock(World.class);
+        Chunk chunk = mock(Chunk.class);
+        UUID uuid = UUID.fromString("00000000-0000-0000-0000-000000000338");
+        when(world.getName()).thenReturn("world");
+        when(world.getUID()).thenReturn(uuid);
+        when(chunk.getX()).thenReturn(0);
+        when(chunk.getZ()).thenReturn(0);
+
+        ChunkLoadEvent existingLoad = mock(ChunkLoadEvent.class);
+        when(existingLoad.isNewChunk()).thenReturn(false);
+        when(existingLoad.getWorld()).thenReturn(world);
+        when(existingLoad.getChunk()).thenReturn(chunk);
+        listener.onChunkLoad(existingLoad);
+
+        verifyNoInteractions(buffers);
     }
 
     private static final class RecordingRepository implements FrontierRepository {
