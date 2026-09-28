@@ -49,8 +49,6 @@ public final class GenerationBufferCoordinator {
             for (int deltaZ = -radius; deltaZ <= radius; deltaZ++) {
                 ChunkKey key = new ChunkKey(worldUuid, centerX + deltaX, centerZ + deltaZ);
                 if (!submitOrResolve(requesterId, pending, key)) {
-                    // Never retain a partially evaluated buffer. A later recovery must
-                    // revalidate the complete square instead of trusting partial state.
                     byRequester.remove(requesterId);
                     return GenerationBufferStatus.FAIL_CLOSED;
                 }
@@ -67,9 +65,6 @@ public final class GenerationBufferCoordinator {
      * prediction. The current buffer must already be READY before callers use this path,
      * so rescanning the overlapping square would add no safety and can cost hundreds of
      * hot-path readiness checks when a player changes direction repeatedly.
-     *
-     * <p>If capacity or health prevents the complete strip from being submitted, the
-     * prediction is not cached. A later movement packet can retry after capacity drains.
      */
     public synchronized void prewarm(
             String requesterId,
@@ -116,6 +111,15 @@ public final class GenerationBufferCoordinator {
         return shield.observeGenerated(
                 Objects.requireNonNull(key, "key"),
                 Objects.requireNonNull(durableCommit, "durableCommit"));
+    }
+
+    /**
+     * Marks already-existing managed terrain as hot-ready without adding it to the
+     * cleanup ledger. This prevents visible, previously generated chunks from blocking
+     * movement merely because Frontier did not create them itself.
+     */
+    public boolean observeLoadedExisting(ChunkKey key) {
+        return readiness.observeReady(Objects.requireNonNull(key, "key"));
     }
 
     /** Refreshes pending readiness away from movement events with a bounded check budget. */
