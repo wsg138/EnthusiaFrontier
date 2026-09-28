@@ -40,7 +40,6 @@ class GenerationShieldMovementListenerTest {
     @Test
     void requiredGuardRadiusUsesLargestRuntimeDistancePlusMargin() {
         Player player = player(4, 7, 5);
-
         assertEquals(9, GenerationShieldMovementListener.requiredGuardRadius(player, 2));
     }
 
@@ -51,14 +50,12 @@ class GenerationShieldMovementListenerTest {
         Player player = mock(Player.class);
         when(root.getPassengers()).thenReturn(List.of(middle));
         when(middle.getPassengers()).thenReturn(List.of(player));
-
         assertSame(player, GenerationShieldMovementListener.playerPassenger(root));
 
         Entity cycleRoot = mock(Entity.class);
         Entity cycleChild = mock(Entity.class);
         when(cycleRoot.getPassengers()).thenReturn(List.of(cycleChild));
         when(cycleChild.getPassengers()).thenReturn(List.of(cycleRoot));
-
         assertNull(GenerationShieldMovementListener.playerPassenger(cycleRoot));
     }
 
@@ -80,12 +77,12 @@ class GenerationShieldMovementListenerTest {
         listener.onMove(event);
 
         verify(buffers).prepare("player:" + PLAYER_ID, WORLD_ID.toString(), 0, 0, 9);
-        verify(buffers, never()).prewarm(any(), any(), anyInt(), anyInt(), anyInt());
+        verify(buffers, never()).prewarm(any(), any(), anyInt(), anyInt(), anyInt(), anyInt(), anyInt());
         verify(event, never()).setCancelled(true);
     }
 
     @Test
-    void readySameChunkMovePrewarmsLikelyNextChunk() {
+    void readySameChunkMovePrewarmsOnlyLikelyAdjacentAdvance() {
         GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
         GenerationShieldMovementListener listener = listener(buffers, settings(2, 12));
         World world = world();
@@ -101,7 +98,7 @@ class GenerationShieldMovementListenerTest {
 
         listener.onMove(event);
 
-        verify(buffers).prewarm("player:" + PLAYER_ID, WORLD_ID.toString(), 1, 0, 9);
+        verify(buffers).prewarm("player:" + PLAYER_ID, WORLD_ID.toString(), 0, 0, 1, 0, 9);
         verify(event, never()).setCancelled(true);
     }
 
@@ -163,7 +160,6 @@ class GenerationShieldMovementListenerTest {
                 .thenReturn(GenerationBufferStatus.PENDING);
 
         listener.onEntityTeleport(event);
-
         verify(event).setCancelled(true);
     }
 
@@ -181,8 +177,31 @@ class GenerationShieldMovementListenerTest {
                 .thenReturn(GenerationBufferStatus.PENDING);
 
         listener.onPortal(event);
-
         verify(event).setCancelled(true);
+    }
+
+    @Test
+    void readySameChunkVehicleMovePrewarmsAhead() {
+        GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
+        GenerationShieldSettings settings = settings(2, 12);
+        GenerationShieldMovementListener listener =
+                new GenerationShieldMovementListener(mock(JavaPlugin.class), buffers, settings, Set.of(WORLD_ID));
+        World world = world();
+        Player player = player(4, 4, 4);
+        Vehicle vehicle = mock(Vehicle.class);
+        when(vehicle.getPassengers()).thenReturn(List.of(player));
+        Location from = location(world, 1, 1);
+        Location to = location(world, 2, 1);
+        VehicleMoveEvent event = mock(VehicleMoveEvent.class);
+        when(event.getVehicle()).thenReturn(vehicle);
+        when(event.getFrom()).thenReturn(from);
+        when(event.getTo()).thenReturn(to);
+        when(buffers.prepare("player:" + PLAYER_ID, WORLD_ID.toString(), 0, 0, 6))
+                .thenReturn(GenerationBufferStatus.READY);
+
+        listener.onVehicleMove(event);
+
+        verify(buffers).prewarm("player:" + PLAYER_ID, WORLD_ID.toString(), 0, 0, 1, 0, 6);
     }
 
     @Test
@@ -217,7 +236,6 @@ class GenerationShieldMovementListenerTest {
                 .thenReturn(GenerationBufferStatus.PENDING);
 
         listener.onVehicleMove(event);
-
         verify(scheduler).runTask(eq(plugin), any(Runnable.class));
     }
 
