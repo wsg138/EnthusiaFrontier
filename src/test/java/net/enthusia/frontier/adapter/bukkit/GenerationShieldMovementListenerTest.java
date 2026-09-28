@@ -78,7 +78,7 @@ class GenerationShieldMovementListenerTest {
 
         verify(event, never()).setCancelled(true);
         verify(buffers, never()).prepare(any(), any(), anyInt(), anyInt(), anyInt());
-        verify(buffers).prewarm("player:" + PLAYER_ID, WORLD_ID.toString(), 10, 0, 11, 0, 9);
+        verify(buffers, never()).prewarm(any(), any(), anyInt(), anyInt(), anyInt(), anyInt(), anyInt());
     }
 
     @Test
