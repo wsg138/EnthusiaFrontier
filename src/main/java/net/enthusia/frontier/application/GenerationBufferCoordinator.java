@@ -44,7 +44,7 @@ public final class GenerationBufferCoordinator {
         }
 
         if (existing != null) {
-            requeueReleasedForOtherPending(requesterId, shield.cancelQueued(requesterId));
+            requeueReleasedForOtherPending(requesterId, shield.cancelQueuedKeys(requesterId));
         }
         PendingBuffer pending = new PendingBuffer(center, new LinkedHashSet<>(), new LinkedHashSet<>());
         byRequester.put(requesterId, pending);
@@ -179,7 +179,7 @@ public final class GenerationBufferCoordinator {
         String requester = Objects.requireNonNull(requesterId, "requesterId");
         byRequester.remove(requester);
         prewarmByRequester.remove(requester);
-        requeueReleasedForOtherPending(requester, shield.cancelQueued(requester));
+        requeueReleasedForOtherPending(requester, shield.cancelQueuedKeys(requester));
     }
 
     public synchronized int pendingBuffers() {
