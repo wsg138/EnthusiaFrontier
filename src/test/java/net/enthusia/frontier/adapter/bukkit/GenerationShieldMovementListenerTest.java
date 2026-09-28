@@ -9,7 +9,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -88,9 +87,10 @@ class GenerationShieldMovementListenerTest {
         GenerationShieldMovementListener listener = listener(buffers, settings(2, 12));
         World world = world();
         Player player = player(4, 7, 5);
+        Location destination = location(world, 1600, 1600);
         PlayerTeleportEvent event = mock(PlayerTeleportEvent.class);
         when(event.getPlayer()).thenReturn(player);
-        when(event.getTo()).thenReturn(location(world, 1600, 1600));
+        when(event.getTo()).thenReturn(destination);
 
         listener.onTeleport(event);
 
@@ -178,7 +178,9 @@ class GenerationShieldMovementListenerTest {
         listener.onMove(event);
 
         verify(event).setCancelled(true);
-        verifyNoInteractions(buffers);
+        verify(buffers).canSoftAdvance();
+        verify(buffers, never()).prepare(any(), any(), anyInt(), anyInt(), anyInt());
+        verify(buffers, never()).prewarm(any(), any(), anyInt(), anyInt(), anyInt(), anyInt(), anyInt());
     }
 
     @Test
