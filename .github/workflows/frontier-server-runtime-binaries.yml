@@ -263,11 +263,13 @@ jobs:
           manifest.write_text(text.rstrip() + '\n\n' + block)
           PY
 
-            git add -A \
+            git add -A -- \
               server/plugins/EnthusiaFrontier-0.1.1.jar \
               server/paper-26.3.jar \
-              server/leaf-1.21.11-179.jar \
               server/BINARY-MANIFEST.yml
+            if git ls-files --error-unmatch server/leaf-1.21.11-179.jar >/dev/null 2>&1; then
+              git add -A -- server/leaf-1.21.11-179.jar
+            fi
             if git diff --cached --quiet; then
               echo 'Runtime binaries already match the validated artifacts.'
               exit 0
