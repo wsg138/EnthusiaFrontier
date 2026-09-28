@@ -44,7 +44,10 @@ class FrontierListenerTest {
         RecordingRepository repository = new RecordingRepository();
         MutationJournal journal = new MutationJournal(repository, new NoopLatch(), 128, 32, ignored -> { });
         FrontierTrackingService tracking = new FrontierTrackingService(
-                Map.of("world", new CoreBoundaryPolicy(0)), 0, journal, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
+                Map.of("world", new CoreBoundaryPolicy(0)),
+                0,
+                journal,
+                Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
         FrontierListener listener = new FrontierListener(tracking);
         World world = mock(World.class);
         Chunk chunk = mock(Chunk.class);
@@ -58,32 +61,41 @@ class FrontierListenerTest {
         when(block.getChunk()).thenReturn(chunk);
 
         journal.start();
+
         ChunkLoadEvent existingLoad = mock(ChunkLoadEvent.class);
         when(existingLoad.isNewChunk()).thenReturn(false);
         listener.onChunkLoad(existingLoad);
+
         ChunkLoadEvent newLoad = mock(ChunkLoadEvent.class);
         when(newLoad.isNewChunk()).thenReturn(true);
         when(newLoad.getWorld()).thenReturn(world);
         when(newLoad.getChunk()).thenReturn(chunk);
         listener.onChunkLoad(newLoad);
+
         BlockPlaceEvent place = mock(BlockPlaceEvent.class);
         when(place.getBlock()).thenReturn(block);
         listener.onBlockPlace(place);
+
         BlockBreakEvent breakEvent = mock(BlockBreakEvent.class);
         when(breakEvent.getBlock()).thenReturn(block);
         listener.onBlockBreak(breakEvent);
+
         PlayerBucketEmptyEvent empty = mock(PlayerBucketEmptyEvent.class);
         when(empty.getBlock()).thenReturn(block);
         listener.onBucketEmpty(empty);
+
         PlayerBucketFillEvent fill = mock(PlayerBucketFillEvent.class);
         when(fill.getBlock()).thenReturn(block);
         listener.onBucketFill(fill);
+
         PlayerInteractEvent noBlock = mock(PlayerInteractEvent.class);
         when(noBlock.getClickedBlock()).thenReturn(null);
         listener.onInteract(noBlock);
+
         PlayerInteractEvent interact = mock(PlayerInteractEvent.class);
         when(interact.getClickedBlock()).thenReturn(block);
         listener.onInteract(interact);
+
         journal.close();
 
         assertEquals(6, repository.applied.size());
@@ -96,7 +108,10 @@ class FrontierListenerTest {
         RecordingRepository repository = new RecordingRepository();
         MutationJournal journal = new MutationJournal(repository, new NoopLatch(), 128, 32, ignored -> { });
         FrontierTrackingService tracking = new FrontierTrackingService(
-                Map.of("world", new CoreBoundaryPolicy(0)), 0, journal, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
+                Map.of("world", new CoreBoundaryPolicy(0)),
+                0,
+                journal,
+                Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
         GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
         FrontierListener listener = new FrontierListener(tracking, buffers);
         World world = mock(World.class);
@@ -115,7 +130,9 @@ class FrontierListenerTest {
         listener.onChunkLoad(newLoad);
         journal.close();
 
-        verify(buffers).observeGenerated(eq(new ChunkKey(uuid.toString(), 7, 8)), any());
+        verify(buffers).observeGenerated(
+                eq(new ChunkKey(uuid.toString(), 7, 8)),
+                any());
         assertEquals(1, repository.applied.size());
     }
 
@@ -124,7 +141,10 @@ class FrontierListenerTest {
         RecordingRepository repository = new RecordingRepository();
         MutationJournal journal = new MutationJournal(repository, new NoopLatch(), 128, 32, ignored -> { });
         FrontierTrackingService tracking = new FrontierTrackingService(
-                Map.of("world", new CoreBoundaryPolicy(0)), 0, journal, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
+                Map.of("world", new CoreBoundaryPolicy(0)),
+                0,
+                journal,
+                Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
         GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
         FrontierListener listener = new FrontierListener(tracking, buffers);
         World world = mock(World.class);
@@ -152,7 +172,10 @@ class FrontierListenerTest {
         RecordingRepository repository = new RecordingRepository();
         MutationJournal journal = new MutationJournal(repository, new NoopLatch(), 128, 32, ignored -> { });
         FrontierTrackingService tracking = new FrontierTrackingService(
-                Map.of("world", new CoreBoundaryPolicy(1000)), 0, journal, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
+                Map.of("world", new CoreBoundaryPolicy(1000)),
+                0,
+                journal,
+                Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
         GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
         FrontierListener listener = new FrontierListener(tracking, buffers);
         World world = mock(World.class);
@@ -174,19 +197,59 @@ class FrontierListenerTest {
 
     private static final class RecordingRepository implements FrontierRepository {
         private final List<FrontierMutation> applied = Collections.synchronizedList(new ArrayList<>());
-        @Override public void initialize() { }
-        @Override public void applyBatch(List<FrontierMutation> mutations) { applied.addAll(mutations); }
-        @Override public List<CleanupCandidate> findCleanupCandidates(String worldUuid, Instant cutoff, int limit) { return List.of(); }
-        @Override public List<RegionKey> findDeletedRegions(String worldUuid, int limit) { return List.of(); }
-        @Override public boolean isProtected(ChunkKey key) { return false; }
-        @Override public boolean isDeleted(ChunkKey key) { return false; }
-        @Override public FrontierStats stats() { return new FrontierStats(0, 0, 0); }
-        @Override public void close() { }
+
+        @Override
+        public void initialize() {
+        }
+
+        @Override
+        public void applyBatch(List<FrontierMutation> mutations) {
+            applied.addAll(mutations);
+        }
+
+        @Override
+        public List<CleanupCandidate> findCleanupCandidates(String worldUuid, Instant cutoff, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public List<RegionKey> findDeletedRegions(String worldUuid, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public boolean isProtected(ChunkKey key) {
+            return false;
+        }
+
+        @Override
+        public boolean isDeleted(ChunkKey key) {
+            return false;
+        }
+
+        @Override
+        public FrontierStats stats() {
+            return new FrontierStats(0, 0, 0);
+        }
+
+        @Override
+        public void close() {
+        }
     }
 
     private static final class NoopLatch implements SafetyLatch {
-        @Override public void trip(String reason) { }
-        @Override public boolean isTripped() { return false; }
-        @Override public String reason() { return "none"; }
+        @Override
+        public void trip(String reason) {
+        }
+
+        @Override
+        public boolean isTripped() {
+            return false;
+        }
+
+        @Override
+        public String reason() {
+            return "none";
+        }
     }
 }
