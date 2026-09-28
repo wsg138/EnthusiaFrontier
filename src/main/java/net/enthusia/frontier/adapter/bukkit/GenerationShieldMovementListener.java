@@ -34,10 +34,10 @@ import org.bukkit.plugin.java.JavaPlugin;
  * Adaptive movement boundary for Frontier generation.
  *
  * <p>While the global generation shield is healthy, player movement and teleports are
- * soft-gated: Frontier prewarms likely forward terrain but does not artificially stop
- * flight or require an entire view-distance square before a teleport may complete.
- * Paper's adaptive generation throttle remains active during this mode. If the global
- * shield pauses or becomes unhealthy, Frontier falls back to the full fail-closed
+ * soft-gated: Frontier does not artificially stop travel or require an entire
+ * view-distance square before movement may complete. Paper's own chunk loader and
+ * Frontier's adaptive Paper generation throttle handle normal live exploration. If the
+ * global shield pauses or becomes unhealthy, Frontier falls back to the full fail-closed
  * readiness buffer before movement may advance.</p>
  *
  * <p>VehicleMoveEvent is not cancellable, so unsafe vehicle advancement in hard-gate
@@ -80,7 +80,6 @@ public final class GenerationShieldMovementListener implements Listener {
         Location to = event.getTo();
 
         if (buffers.canSoftAdvance()) {
-            prewarmAhead(event.getPlayer(), event.getFrom(), to);
             return;
         }
 
@@ -139,7 +138,6 @@ public final class GenerationShieldMovementListener implements Listener {
         }
 
         if (buffers.canSoftAdvance()) {
-            prewarmAhead(rider, event.getFrom(), event.getTo());
             return;
         }
 
