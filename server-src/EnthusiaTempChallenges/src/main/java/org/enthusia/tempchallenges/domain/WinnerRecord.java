@@ -1,0 +1,1 @@
+package org.enthusia.tempchallenges.domain; import java.time.Instant; import java.util.UUID; public record WinnerRecord(String eventId,String challengeId,UUID uuid,String name,ActorIdentity.Platform platform,Instant claimedAt,String signalId,String signal){}

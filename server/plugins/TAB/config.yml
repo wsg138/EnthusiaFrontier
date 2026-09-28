@@ -1,0 +1,71 @@
+# VeloTAB owns the network player list. Backend TAB only owns this server's scoreboard.
+# Keep this scoreboard deliberately dependency-light so omitted SMP plugins never render raw placeholders.
+header-footer:
+  enabled: false
+tablist-name-formatting:
+  enabled: false
+scoreboard-teams:
+  enabled: false
+playerlist-objective:
+  enabled: false
+belowname-objective:
+  enabled: false
+prevent-spectator-effect:
+  enabled: false
+bossbar:
+  enabled: false
+scoreboard:
+  enabled: true
+  toggle-command: /scoreboard
+  remember-toggle-choice: true
+  hidden-by-default: false
+  use-numbers: false
+  static-number: 0
+  delay-on-join-milliseconds: 500
+  scoreboards:
+    frontier:
+      title: '<gold><bold>ENTHUSIA FRONTIER</bold></gold>'
+      lines:
+      - '<dark_gray>--------------------'
+      - '<white>%player%'
+      - '<gray>Rank: <white>%luckperms_prefix%'
+      - '<gray>Playtime: <aqua>%playtime_active_formatted%'
+      - '<gray>World: <white>%world%'
+      - '<gray>Ping: <green>%ping%ms'
+      - ''
+      - '<gold>±5,000 <gray>Overworld'
+      - '<gold>±2,500 <gray>Nether / End'
+      - '<dark_gray>--------------------'
+layout:
+  enabled: false
+ping-spoof:
+  enabled: false
+placeholders:
+  date-format: 'MM/dd/yyyy'
+  time-format: '[HH:mm:ss / h:mm a]'
+  time-offset: 0
+  register-tab-expansion: false
+placeholder-refresh-intervals:
+  default-refresh-interval: 1000
+  '%ping%': 1000
+  '%world%': 1000
+  '%luckperms_prefix%': 1000
+  '%playtime_active_formatted%': 5000
+assign-groups-by-permissions: false
+primary-group-finding-list:
+- Owner
+- Admin
+- Moderator
+- Helper
+- default
+permission-refresh-interval: 1000
+debug: false
+use-online-uuid-in-tablist: true
+mysql:
+  enabled: false
+proxy-support:
+  enabled: false
+components:
+  minimessage-support: true
+  disable-shadow-for-heads: true
+config-version: 5

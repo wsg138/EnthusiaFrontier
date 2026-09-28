@@ -1,8 +1,12 @@
 package net.enthusia.frontier.adapter.bukkit;
 
 import java.util.Objects;
+import net.enthusia.frontier.application.DurableGenerationObserver;
+import net.enthusia.frontier.application.ExistingGenerationObserver;
 import net.enthusia.frontier.application.FrontierTrackingService;
+import net.enthusia.frontier.application.GenerationBufferCoordinator;
 import net.enthusia.frontier.domain.ActivityKind;
+import net.enthusia.frontier.domain.ChunkKey;
 import org.bukkit.block.Block;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -17,21 +21,46 @@ import org.bukkit.event.world.ChunkLoadEvent;
 /** Thin Bukkit event adapter. Event handlers only enqueue immutable application mutations. */
 public final class FrontierListener implements Listener {
     private final FrontierTrackingService tracking;
+    private final DurableGenerationObserver generationObserver;
+    private final ExistingGenerationObserver existingGenerationObserver;
 
     public FrontierListener(FrontierTrackingService tracking) {
+        this(tracking, null);
+    }
+
+    public FrontierListener(
+            FrontierTrackingService tracking,
+            GenerationBufferCoordinator generationBuffers) {
         this.tracking = Objects.requireNonNull(tracking, "tracking");
+        this.generationObserver = generationBuffers == null
+                ? null
+                : (key, durableCommit) -> generationBuffers.observeGenerated(key, durableCommit);
+        this.existingGenerationObserver = generationBuffers == null
+                ? null
+                : key -> generationBuffers.observeLoadedExisting(key);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkLoad(ChunkLoadEvent event) {
         if (!event.isNewChunk()) {
+            observeExistingManagedChunk(event);
             return;
         }
-        tracking.recordGenerated(
+        if (generationObserver == null) {
+            tracking.recordGenerated(
+                    event.getWorld().getName(),
+                    event.getWorld().getUID(),
+                    event.getChunk().getX(),
+                    event.getChunk().getZ());
+            return;
+        }
+
+        tracking.recordGeneratedDurably(
                 event.getWorld().getName(),
                 event.getWorld().getUID(),
                 event.getChunk().getX(),
-                event.getChunk().getZ());
+                event.getChunk().getZ(),
+                generationObserver);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -59,6 +88,20 @@ public final class FrontierListener implements Listener {
         Block clicked = event.getClickedBlock();
         if (clicked != null) {
             protect(clicked, ActivityKind.BLOCK_INTERACT);
+        }
+    }
+
+    private void observeExistingManagedChunk(ChunkLoadEvent event) {
+        if (existingGenerationObserver == null) {
+            return;
+        }
+        ChunkKey key = new ChunkKey(
+                event.getWorld().getUID().toString(),
+                event.getChunk().getX(),
+                event.getChunk().getZ());
+        var policy = tracking.worldPolicies().get(event.getWorld().getName());
+        if (policy != null && policy.isManaged(key)) {
+            existingGenerationObserver.observe(key);
         }
     }
 

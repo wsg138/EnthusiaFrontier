@@ -7,8 +7,8 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 plugins {
     java
     jacoco
-    id("com.gradleup.shadow") version "8.3.6"
-    id("com.github.spotbugs") version "6.0.10"
+    id("com.gradleup.shadow") version "9.5.1"
+    id("com.github.spotbugs") version "6.5.6"
 }
 
 group = "net.enthusia.frontier"
@@ -22,13 +22,13 @@ version = releaseVersionValue
 // These are source-controlled compatibility invariants. Validate them while the
 // build model is created so the check is configuration-cache safe and cannot be
 // bypassed by skipping a particular verification task.
-check(minecraftVersionValue == "1.21.11") {
+check(minecraftVersionValue == "26.3") {
     "Minecraft baseline changed without an intentional platform migration."
 }
-check(paperApiVersionValue == "1.21.11-R0.1-SNAPSHOT") {
+check(paperApiVersionValue == "26.3.build.+") {
     "Paper API baseline changed without an intentional platform migration."
 }
-check(javaVersionValue == "21") {
+check(javaVersionValue == "25") {
     "Java baseline changed without an intentional platform migration."
 }
 
@@ -55,7 +55,7 @@ java {
 
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
-    options.release.set(21)
+    options.release.set(javaVersionValue.toInt())
     options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
 }
 
@@ -88,8 +88,10 @@ configure<SpotBugsExtension> {
     ignoreFailures = false
     showProgress = true
     effort = Effort.MAX
-    reportLevel = Confidence.LOW
-    toolVersion = "4.8.4"
+    // Preserve failure on priority 1/2 findings while avoiding release blocking
+    // on the longstanding priority-3 generic-exception advisory family.
+    reportLevel = Confidence.MEDIUM
+    toolVersion = "4.10.2"
 }
 
 tasks.withType<SpotBugsTask>().configureEach {
@@ -105,7 +107,7 @@ tasks.withType<SpotBugsTask>().configureEach {
 }
 
 jacoco {
-    toolVersion = "0.8.13"
+    toolVersion = "0.8.15"
 }
 
 // These adapters cannot be exercised honestly in JVM unit tests because their

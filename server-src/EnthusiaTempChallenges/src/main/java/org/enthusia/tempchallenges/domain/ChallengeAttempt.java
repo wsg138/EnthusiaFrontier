@@ -1,0 +1,3 @@
+package org.enthusia.tempchallenges.domain;
+import java.time.Instant;
+public record ChallengeAttempt(String eventId,ChallengeDefinition challenge,ActorIdentity actor,String signalId,SignalKey signal,String detail,Instant occurredAt,Eligibility eligibility,EventState eventState){public ChallengeAttempt{if(eventId==null||eventId.isBlank())throw new IllegalArgumentException("eventId"); if(challenge==null||actor==null||signal==null||eligibility==null||eventState==null)throw new IllegalArgumentException("null attempt"); if(signalId==null||signalId.isBlank())throw new IllegalArgumentException("signalId"); if(occurredAt==null)occurredAt=Instant.now(); if(detail==null)detail="";}}

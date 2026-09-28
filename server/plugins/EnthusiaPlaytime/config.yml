@@ -1,0 +1,89 @@
+storage:
+  type: sqlite
+  sqlite:
+    file: playtime.db
+  mysql:
+    host: 127.0.0.1
+    port: 3306
+    database: enthusia_frontier_test_playtime
+    username: frontier_test
+    password: ''
+    use-ssl: false
+    pool-size: 10
+  flush-interval-ticks: 1200
+sampling:
+  tick-interval: 20
+  idle-seconds: 60
+  afk-seconds: 300
+chat:
+  count-chat-as-activity: true
+  count-commands-as-activity: true
+joins:
+  retention-days: 30
+  timezone: America/Indiana/Indianapolis
+  first-join:
+    enabled: true
+    broadcast: '&6Enthusia Frontier Test &8» &7Welcome &a{USERNAME}&7! &8[#{UNIQUE}]'
+    player-message: []
+    ping:
+      enabled: false
+leaderboards:
+  default-metric: total
+  default-range: all
+  cache-ttl-seconds: 30
+  export:
+    enabled: false
+    directory: public-leaderboards
+    interval-seconds: 300
+    r2:
+      enabled: false
+      account-id: ''
+      bucket: frontier-test-playtime-data
+      access-key-id: ''
+      secret-access-key: ''
+      prefix: leaderboards
+    run-on-disable: false
+gui:
+  enabled: true
+  filler-material: GRAY_STAINED_GLASS_PANE
+  bedrock:
+    enabled: true
+    main-menu-rows: 5
+    leaderboard-rows: 5
+placeholders:
+  enabled: true
+  leaderboard-fallback: ''
+  top-leaderboard-max-rank: 100
+ux:
+  show-afk-title: false
+  show-afk-actionbar: true
+  actionbar:
+    enabled: true
+    show-active: false
+    show-idle: false
+    show-afk: true
+    show-suspicious: true
+rewards:
+  enabled: false
+  milestones: []
+debug:
+  enabled: false
+  log-suspicious: true
+analytics:
+  plan:
+    enabled: false
+  hourly-retention-days: 30
+config-version: 4
+activity:
+  movement-throttle-ms: 250
+  count-head-rotation: true
+  tiny-movement-threshold: 0.01
+  suspicious-swing-tracking-enabled: true
+playtime-audit:
+  enabled: true
+  interval-minutes: 5
+  max-players-per-tick: 1
+  repair-mode: true
+  debug-log-repairs: false
+numerals:
+  enabled: true

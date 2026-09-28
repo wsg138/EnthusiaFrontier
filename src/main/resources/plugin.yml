@@ -1,9 +1,9 @@
 name: EnthusiaFrontier
 version: '0.1.1'
 main: net.enthusia.frontier.EnthusiaFrontierPlugin
-api-version: '1.21.11'
+api-version: '26.2'
 author: Enthusia
-description: Adaptive world-frontier generation and lifecycle management for large Leaf/Paper worlds.
+description: Adaptive world-frontier generation and lifecycle management for large Paper-compatible worlds.
 commands:
   frontier:
     description: EnthusiaFrontier diagnostics and administration.

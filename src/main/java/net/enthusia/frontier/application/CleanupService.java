@@ -19,6 +19,7 @@ public final class CleanupService {
     private final StorageReclaimPort storage;
     private final Clock clock;
     private final Consumer<String> auditSink;
+    private final Consumer<ChunkKey> deletedChunkSink;
 
     public CleanupService(
             CleanupSettings settings,
@@ -29,6 +30,19 @@ public final class CleanupService {
             StorageReclaimPort storage,
             Clock clock,
             Consumer<String> auditSink) {
+        this(settings, tracking, journal, safetyLatch, environment, storage, clock, auditSink, ignored -> { });
+    }
+
+    public CleanupService(
+            CleanupSettings settings,
+            FrontierTrackingService tracking,
+            MutationJournal journal,
+            SafetyLatch safetyLatch,
+            CleanupEnvironmentPort environment,
+            StorageReclaimPort storage,
+            Clock clock,
+            Consumer<String> auditSink,
+            Consumer<ChunkKey> deletedChunkSink) {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.tracking = Objects.requireNonNull(tracking, "tracking");
         this.journal = Objects.requireNonNull(journal, "journal");
@@ -37,6 +51,7 @@ public final class CleanupService {
         this.storage = Objects.requireNonNull(storage, "storage");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.auditSink = Objects.requireNonNull(auditSink, "auditSink");
+        this.deletedChunkSink = Objects.requireNonNull(deletedChunkSink, "deletedChunkSink");
     }
 
     public CleanupResult process(String worldName, CleanupCandidate candidate) throws Exception {
@@ -75,6 +90,9 @@ public final class CleanupService {
         }
 
         storage.clearChunk(worldName, key);
+        // Storage no longer contains the chunk. Invalidate the hot readiness view
+        // immediately so same-process re-entry can never treat reclaimed terrain as ready.
+        deletedChunkSink.accept(key);
         if (!journal.submit(new FrontierMutation.Deleted(key, Instant.now(clock)))) {
             auditDecision(worldName, candidate, "latched", "deleted_marker_submit_failed");
             return CleanupResult.LATCHED;

@@ -1,0 +1,27 @@
+enthusia_logo:
+  texture: enthusia:font/emojis/enthusia_logo.png
+  height: 9
+  ascent: 8
+  is_emoji: true
+  placeholders:
+  - ':enthusia:'
+  permission: enthusia.emoji.enthusia
+  char: 뀄
+vibe_logo:
+  texture: enthusia:font/emojis/vibe.png
+  height: 9
+  ascent: 8
+  is_emoji: true
+  placeholders:
+  - ':vibe_logo:'
+  permission: enthusia.emoji.vibe
+  char: 뀢
+belovedones_logo:
+  texture: enthusia:font/emojis/beloved_ones.png
+  height: 9
+  ascent: 8
+  is_emoji: true
+  placeholders:
+  - ':belovedones_logo:'
+  permission: enthusia.emoji.belovedones
+  char: 뀁

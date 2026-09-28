@@ -1,6 +1,6 @@
 # Architecture
 
-EnthusiaFrontier uses hexagonal architecture so destructive storage behavior stays replaceable and policy remains independently testable.
+EnthusiaFrontier uses hexagonal architecture so destructive storage behavior and generation admission stay replaceable while policy remains independently testable.
 
 ## Dependency rule
 
@@ -29,8 +29,8 @@ Owns stable concepts and pure rules:
 - `ChunkKey` and `RegionKey`;
 - permanent-core boundary semantics;
 - activity/protection semantics;
-- throttle levels and hysteresis;
-- generation-limit value objects;
+- generation-shield levels, whole-server limits and MSPT hysteresis;
+- secondary Paper throttle levels and generation-limit value objects;
 - cleanup candidate and reclamation outcomes.
 
 ## Application layer
@@ -40,13 +40,55 @@ Orchestrates use cases through ports:
 - record observed generation;
 - record player activity and expand protection radius;
 - batch ledger mutations;
-- sample MSPT and select a throttle band;
-- apply/restore generation limits;
+- sample MSPT and select global generation-shield limits;
+- admit virgin generation through one bounded requester-fair whole-server queue;
+- deduplicate identical chunk requests across requesters;
+- build and refresh generated safety buffers away from movement hot paths;
+- apply/restore secondary Paper per-player generation limits;
 - require a durable cleanup reservation before destructive storage mutation;
 - re-check runtime player/load/ticket/MSPT safety immediately before logical reclaim;
 - trigger physical reclaim only after durable logical-deletion state exists.
 
 Application services know interfaces, not Paper internals.
+
+## Generation Shield
+
+`GenerationShieldService` is the primary runtime generation safety mechanism. It owns one server-wide queue and one server-wide budget regardless of requester count.
+
+Its invariants are:
+
+- the configured chunks-per-second budget is aggregate across all explorers/requesters;
+- `maxConcurrent` is aggregate across the whole server;
+- duplicate requests for the same chunk collapse globally;
+- requester queues rotate fairly so one explorer cannot monopolize admission;
+- the pending queue is bounded and rejects overload explicitly;
+- critical limits of `0 chunks/s` or `0 concurrent` mean **zero new Frontier generation admissions**;
+- existing in-flight async work is allowed to complete, but no new work is submitted while paused;
+- readiness is not considered complete until generation succeeds and the generated state is durably committed;
+- any generation/readiness failure makes the shield unhealthy and future frontier generation fails closed.
+
+`GenerationShieldController` samples average MSPT and uses hysteresis to select the active whole-server limits. Starting values in configuration are staging inputs, not production-performance claims.
+
+### Generated safety buffer
+
+`GenerationBufferCoordinator` prepares a square of proven/generated terrain around a requested movement center. It does not synchronously rescan a large radius on every movement packet: the movement path reuses the current buffer state, while a bounded scheduler refreshes pending readiness.
+
+The required runtime radius is:
+
+```text
+max(player view distance, player send-view distance, player simulation distance)
++ configured safety margin
+```
+
+If that required radius exceeds the configured maximum, movement farther into managed frontier terrain is blocked rather than silently truncating the safety buffer.
+
+The Bukkit listener guards normal movement, player teleports, portals, player-riding entity teleports and vehicle movement/rollback paths. This is a defense against Paper beginning generation around a player before the player physically enters an ungenerated destination chunk.
+
+### Readiness persistence
+
+`SqliteGenerationReadinessAdapter` keeps movement/readiness lookups memory-only while persisting successful generation to the same SQLite `frontier_chunk` ledger on a serial writer with WAL and `synchronous=FULL`.
+
+A chunk becomes ready only after the durable write completes. Startup reloads durable ready rows and can adopt already-loaded managed chunks without generating them. Logical cleanup invalidates the hot readiness cache immediately, so reclaimed terrain cannot be treated as ready in the same process.
 
 ## Outbound ports
 
@@ -56,9 +98,15 @@ Owns the durable SQLite ledger. Destructive mode atomically reserves eligible ro
 
 Player protection and regeneration clear stale reclaim intent. Final deletion state is accepted only for an intended, unprotected row.
 
+### ChunkGenerationPort / GenerationReadinessPort
+
+The production generation adapter submits non-urgent asynchronous Paper/Leaf chunk generation. The application layer never calls Bukkit directly. Readiness is a separate durable boundary so an async generation future completing is not enough by itself to allow movement.
+
 ### GenerationThrottlePort
 
-Applies/restores per-player chunk-generation limits. The production adapter isolates reflective Paper global-configuration access. Sentinel Sim uses a separate recording adapter and is not treated as evidence for production internals.
+Applies/restores Paper/Moonrise per-player chunk-generation limits. This is **secondary defense in depth**, not Frontier's aggregate generation budget. The production adapter isolates reflective Paper global-configuration access.
+
+Paper's rate is per player and therefore scales with explorer count; additionally, Paper rate `0` is not a true pause. Frontier never relies on that adapter to provide the server-wide budget or critical zero-admission state.
 
 ### ServerPerformancePort
 
@@ -72,13 +120,15 @@ The current Paper/Leaf adapter clears CHUNK_DATA, ENTITY_DATA and POI_DATA throu
 
 ## Inbound adapters
 
-Bukkit listeners translate platform events into application commands. They never write SQLite directly. The command adapter exposes bounded diagnostics and the isolated acceptance entrypoint.
+Bukkit listeners translate platform events into application commands. They never write SQLite directly. The command adapter exposes bounded diagnostics plus isolated acceptance/load-test entrypoints that are fenced to the disposable loopback Sentinel-style runtime.
 
 ## Persistence threading
 
 Normal event traffic submits immutable mutations into a bounded queue. A dedicated worker commits batches transactionally.
 
 If the queue cannot accept a mutation, Frontier immediately marks cleanup unsafe. The persistent latch prevents any future destructive work until the condition is reviewed. Activity is also placed into an in-memory protection set before its async ledger write, closing the candidate-scan race window.
+
+Generation readiness uses a separate serial writer because movement must remain a memory-only read path. The global generation service retains its concurrency slot until that durable readiness future completes.
 
 Cleanup candidate discovery/reservation runs asynchronously. World load/ticket/player-distance checks and Moonrise mutation run on the server thread in bounded per-tick work.
 
@@ -91,6 +141,7 @@ TRACKED_TEMPORARY
  -> DURABLE_RECLAIM_INTENT   (SQLite commit, FULL synchronous)
  -> RUNTIME_SAFETY_RECHECK   (journal idle, MSPT, players, tickets, loads, activity)
  -> LOGICAL_CLEAR            (Moonrise chunk/entity/POI delete)
+ -> READINESS_INVALIDATION   (same-process hot cache)
  -> DURABLE_DELETED          (async journal commit)
  -> EMPTY_REGION_PROOF
  -> PHYSICAL_RECLAIM         (cache-closed MCA unlink)
@@ -106,9 +157,13 @@ Important crash cases:
 
 A region containing any occupied unknown/protected data is not physically reclaimable.
 
-## Why generation throttling is global
+## Why the generation budget is truly global
 
-Paper's generation limiter is a per-player global setting rather than a per-coordinate setting. In production, the permanent core is pregenerated, so changing the **generation** rate does not penalize normal movement through that core. In the zero-core staging profile, all exploration is intentionally subject to Frontier's generation policy.
+Paper/Moonrise's exposed generation-rate and concurrency settings are per-player. They remain useful defense in depth, but multiplying a per-player budget across many explorers does not protect the server as a whole.
+
+Frontier therefore admits virgin terrain through its own global queue before asking Paper/Leaf to generate it. A configured budget such as `8 chunks/s, 4 concurrent` remains one budget with 1, 10, 20 or 40 requesters. The real-Leaf CI harness verifies that invariant through the production queue and async generation adapter.
+
+The permanent core bypasses Frontier generation admission because it is already generated. In a zero-core disposable test profile, essentially all new exploration is managed by the shield.
 
 ## Compatibility boundary
 
@@ -121,4 +176,5 @@ Paper/Leaf internal configuration and Moonrise storage are expected to evolve. E
 - external SQL backend if SQLite becomes a bottleneck;
 - Prometheus/Plan metrics adapter;
 - Leaf-specific stable API adapter if Leaf exposes runtime generation controls;
+- a real/headless Minecraft-client staging driver for movement and network-load validation;
 - maintenance/offline compaction for future storage formats that cannot be safely reclaimed at runtime.

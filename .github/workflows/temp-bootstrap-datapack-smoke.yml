@@ -1,0 +1,154 @@
+name: TEMP bootstrap datapack smoke
+
+on:
+  push:
+    branches: [server/frontier-test-runtime]
+    paths:
+      - 'server/world/datapacks/enthusia-frontier-test/**'
+      - 'server/server.properties'
+      - '.github/workflows/temp-bootstrap-datapack-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temp-bootstrap-datapack-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Resolve Paper 26.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          user_agent='Enthusia TEMP datapack validation (github.com/wsg138/EnthusiaFrontier)'
+          curl --fail --silent --show-error --location --retry 3 \
+            -H "User-Agent: ${user_agent}" \
+            'https://fill.papermc.io/v3/projects/paper/versions/26.3/builds' \
+            -o "$RUNNER_TEMP/paper-builds.json"
+          paper_url=''
+          for channel in STABLE BETA ALPHA; do
+            candidate="$(jq -r --arg channel "$channel" '[.[] | select(.channel == $channel)] | sort_by(.id // .number) | last | .downloads."server:default".url // empty' "$RUNNER_TEMP/paper-builds.json")"
+            if [[ -n "$candidate" ]]; then paper_url="$candidate"; break; fi
+          done
+          test -n "$paper_url"
+          curl --fail --silent --show-error --location --retry 3 \
+            -H "User-Agent: ${user_agent}" \
+            "$paper_url" -o "$RUNNER_TEMP/paper.jar"
+          test -s "$RUNNER_TEMP/paper.jar"
+          sha256sum "$RUNNER_TEMP/paper.jar"
+
+      - name: Boot exact TEMP datapack and verify borders
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/temp-datapack-smoke"
+          mkdir -p "$work/world/datapacks"
+          cp -R server/world/datapacks/enthusia-frontier-test "$work/world/datapacks/"
+          cp "$RUNNER_TEMP/paper.jar" "$work/paper.jar"
+          cat > "$work/eula.txt" <<'EOF'
+          eula=true
+          EOF
+          cat > "$work/server.properties" <<'EOF'
+          allow-nether=true
+          difficulty=peaceful
+          enable-query=false
+          enable-rcon=false
+          enforce-secure-profile=false
+          generate-structures=false
+          initial-enabled-packs=vanilla,file/enthusia-frontier-test
+          level-name=world
+          level-type=minecraft:flat
+          max-players=1
+          online-mode=false
+          server-ip=127.0.0.1
+          server-port=25591
+          simulation-distance=2
+          spawn-animals=false
+          spawn-monsters=false
+          spawn-npcs=false
+          spawn-protection=0
+          sync-chunk-writes=false
+          use-native-transport=false
+          view-distance=2
+          white-list=false
+          EOF
+
+          pipe="$work/console.pipe"
+          mkfifo "$pipe"
+          exec 3<>"$pipe"
+          pushd "$work" >/dev/null
+          java -Xms512M -Xmx1536M -jar paper.jar --nogui <"$pipe" >server.log 2>&1 &
+          pid=$!
+          popd >/dev/null
+
+          cleanup() {
+            rc=$?
+            if kill -0 "$pid" 2>/dev/null; then
+              printf 'stop\n' >&3 || true
+              sleep 2
+              kill "$pid" 2>/dev/null || true
+            fi
+            if (( rc != 0 )); then tail -n 300 "$work/server.log" >&2 || true; fi
+            return "$rc"
+          }
+          trap cleanup EXIT
+
+          started=false
+          for _ in $(seq 1 180); do
+            if grep -qE 'Done \([0-9.]+s\)!|Done \(' "$work/server.log"; then started=true; break; fi
+            kill -0 "$pid" 2>/dev/null || { echo 'Paper exited before Done.' >&2; exit 1; }
+            sleep 1
+          done
+          [[ "$started" == true ]]
+
+          printf 'datapack list enabled\n' >&3
+          printf 'execute in minecraft:overworld run worldborder get\n' >&3
+          printf 'execute in minecraft:the_nether run worldborder get\n' >&3
+          printf 'execute in minecraft:the_end run worldborder get\n' >&3
+          printf 'say TEMP_DATAPACK_CHECK_COMPLETE\n' >&3
+
+          for _ in $(seq 1 30); do
+            grep -q 'TEMP_DATAPACK_CHECK_COMPLETE' "$work/server.log" && break
+            sleep 1
+          done
+          grep -q 'TEMP_DATAPACK_CHECK_COMPLETE' "$work/server.log"
+          grep -q 'file/enthusia-frontier-test' "$work/server.log"
+          ! grep -qE 'Failed to load.*enthusia-frontier-test|Errors in currently selected data packs|Pack .*enthusia-frontier-test.*incompatible' "$work/server.log"
+
+          mapfile -t borders < <(grep -Ei 'world border.*currently.*(10000|5000|1000)|worldborder.*(10000|5000|1000)' "$work/server.log" || true)
+          if (( ${#borders[@]} < 3 )); then
+            echo 'Did not observe all three worldborder results.' >&2
+            grep -i 'border' "$work/server.log" >&2 || true
+            exit 1
+          fi
+          grep -Eq '10000([.]0+)?' <<<"${borders[*]}"
+          grep -Eq '5000([.]0+)?' <<<"${borders[*]}"
+          grep -Eq '1000([.]0+)?' <<<"${borders[*]}"
+
+          printf 'stop\n' >&3
+          for _ in $(seq 1 45); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          ! kill -0 "$pid" 2>/dev/null
+          wait "$pid"
+          trap - EXIT
+          echo 'TEMP_BOOTSTRAP_DATAPACK_OK minecraft=26.3 borders=10000,5000,1000'
+
+      - name: Upload smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: temp-bootstrap-datapack-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: ${{ runner.temp }}/temp-datapack-smoke/server.log

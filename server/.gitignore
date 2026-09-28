@@ -1,0 +1,31 @@
+# Runtime/generated files
+logs/
+cache/
+libraries/
+versions/
+crash-reports/
+usercache.json
+*.log
+*.lck
+
+# Fresh worlds: only the committed bootstrap datapack belongs in Git.
+world/*
+!world/datapacks/
+!world/datapacks/**
+world_nether/
+world_the_end/
+
+# Runtime plugin state/databases/secrets
+plugins/**/*.db
+plugins/**/*.db-*
+plugins/**/*.sqlite
+plugins/**/*.sqlite3
+plugins/**/data/
+plugins/**/backups/
+plugins/floodgate/key.pem
+plugins/LuckPerms/*.mv.db
+plugins/LuckPerms/*.db
+plugins/Nexo/pack/pack.zip
+
+# Secret files copied at deployment
+forwarding.secret

@@ -1,0 +1,90 @@
+Experimental:
+  packets:
+    disable_netty_injection: false
+debug: false
+ConfigTools:
+  generate_default_configs: true
+  disable_automatic_model_data: false
+  disable_automatic_glyph_code: false
+  initial_custom_model_data: 1000
+  skipped_model_data_numbers: []
+Pack:
+  obfuscation:
+    type: SIMPLE
+    cache: true
+  validate:
+    models: true
+    fonts: true
+    atlas: true
+    languages: true
+  generation:
+    legacy_atlas: true
+    generate_pack: true
+    output_path: plugins/Nexo/pack/pack.zip
+    prefer_item_models: false
+    minimize_json: true
+    read_lenient: true
+  import:
+    default_assets: true
+    external_packs: true
+    from_location: []
+    from_url: []
+    external_pack_order: []
+    model_engine: true
+  dispatch:
+    send_pre_join: true
+    send_on_join: false
+    send_on_reload: true
+    delay: -1
+    mandatory: true
+    prompt: '<#fa4943>Accept the Enthusia resource pack for emoji and custom visuals.'
+  server:
+    type: POLYMATH
+    polymath:
+      server: atlas.nexomc.com
+      secret: "REPLACE_WITH_EXISTING_NEXO_POLYMATH_SECRET"
+ItemUpdater:
+  update_items: true
+  update_items_on_reload: true
+  update_tile_entity_contents: true
+  update_entity_contents: true
+  override_item_lore: false
+Misc:
+  hide_scoreboard_numbers: false
+  hide_scoreboard_background: false
+  hide_tablist_background: false
+  block_other_resourcepacks: false
+  default_language_key: en_us
+Plugin:
+  language: english
+  keep_this_up_to_date: true
+  packets:
+    disable_glyph_handler: false
+  formatting:
+    cursor: true
+    translatable: false
+    villagers: true
+    dialog: true
+    anvil: true
+    signs: true
+    books: true
+    tablist: false
+    bossbar: true
+    scoreboard: false
+    items: true
+    packet_events: false
+    entity_data: true
+    chats:
+      player_chat: true
+      system_chat: true
+      standard_tags: false
+Glyphs:
+  default_gif_type: SPRITE
+  emoji_book_size: 255
+  emoji_list_permission_only: false
+  unicode_completions: true
+  default_permission: enthusia.emoji.<glyphid>
+  default_font: nexo:default
+  default_shadow_color: '#00000000'
+  hover_text: ''
+  shift_font: nexo:shift

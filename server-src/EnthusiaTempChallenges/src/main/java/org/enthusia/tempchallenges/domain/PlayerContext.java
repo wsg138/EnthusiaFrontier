@@ -1,0 +1,1 @@
+package org.enthusia.tempchallenges.domain; public record PlayerContext(Mode mode,boolean operator,boolean excludedPermission,boolean recentAdminMutation){public enum Mode{SURVIVAL,ADVENTURE,CREATIVE,SPECTATOR}}

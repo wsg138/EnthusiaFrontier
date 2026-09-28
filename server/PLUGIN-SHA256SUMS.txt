@@ -1,0 +1,2 @@
+6afc2d898a65248deda8ccf05b0e326d136f27b643550b9e0ce6ac23309d031d  server/plugins/EnthusiaTempChallenges-0.2.0-frontier.1.jar
+bfc5eaf7c7275756d8c9cdc8fdf0496723ef36eceea5cfb2e634b051a0277ef9  server/plugins/EnthusiaTags.jar

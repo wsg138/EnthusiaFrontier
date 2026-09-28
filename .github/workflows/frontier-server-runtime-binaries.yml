@@ -1,0 +1,288 @@
+name: Publish Frontier server runtime binaries
+
+on:
+  push:
+    branches: [server/frontier-test-runtime]
+    paths:
+      - 'src/**'
+      - 'tools/smoke-frontier-runtime.sh'
+      - 'tools/smoke-frontier-real-clients.sh'
+      - 'tools/frontier-real-client-load.js'
+      - 'build.gradle.kts'
+      - 'gradle.properties'
+      - 'settings.gradle.kts'
+      - '.github/workflows/frontier-server-runtime-binaries.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: frontier-server-runtime-binaries-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.2.1'
+
+      - name: Build, verify, and reproduce Frontier 0.1.1
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gradle clean check shadowJar --no-daemon
+          mapfile -t first_jars < <(find build/libs -maxdepth 1 -type f -name 'EnthusiaFrontier-*.jar' | sort)
+          test "${#first_jars[@]}" -eq 1
+          test -s "${first_jars[0]}"
+          cp "${first_jars[0]}" "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar"
+          FIRST_SHA="$(sha256sum "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" | awk '{print $1}')"
+          printf '%s\n' "$FIRST_SHA" > "$RUNNER_TEMP/frontier.sha256"
+          echo "First build SHA-256: $FIRST_SHA"
+
+          gradle clean check shadowJar --no-daemon
+          mapfile -t second_jars < <(find build/libs -maxdepth 1 -type f -name 'EnthusiaFrontier-*.jar' | sort)
+          test "${#second_jars[@]}" -eq 1
+          test -s "${second_jars[0]}"
+          SECOND_SHA="$(sha256sum "${second_jars[0]}" | awk '{print $1}')"
+          echo "Second build SHA-256: $SECOND_SHA"
+          test "$FIRST_SHA" = "$SECOND_SHA"
+          cmp --silent "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" "${second_jars[0]}"
+
+      - name: Print SpotBugs findings on failure
+        if: failure()
+        shell: bash
+        run: |
+          if [[ -f build/reports/spotbugs/main.xml ]]; then
+            cat build/reports/spotbugs/main.xml
+          fi
+
+      - name: Upload quality reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontier-quality-reports-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            build/reports/tests/
+            build/reports/jacoco/
+            build/reports/spotbugs/
+
+      - name: Resolve and verify Paper 26.3 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          user_agent='EnthusiaFrontier runtime validation (github.com/wsg138/EnthusiaFrontier)'
+          curl --fail --silent --show-error --location --retry 3 \
+            -H "User-Agent: ${user_agent}" \
+            'https://fill.papermc.io/v3/projects/paper/versions/26.3/builds' \
+            -o "$RUNNER_TEMP/paper-builds.json"
+
+          paper_url=''
+          paper_channel=''
+          for channel in STABLE BETA ALPHA; do
+            candidate="$(jq -r --arg channel "$channel" '[.[] | select(.channel == $channel)] | sort_by(.id // .number) | last | .downloads."server:default".url // empty' "$RUNNER_TEMP/paper-builds.json")"
+            if [[ -n "$candidate" ]]; then
+              paper_url="$candidate"
+              paper_channel="$channel"
+              break
+            fi
+          done
+          test -n "$paper_url"
+          printf '%s\n' "$paper_url" > "$RUNNER_TEMP/paper-runtime-url.txt"
+          printf '%s\n' "$paper_channel" > "$RUNNER_TEMP/paper-runtime-channel.txt"
+          curl --fail --silent --show-error --location --retry 3 \
+            -H "User-Agent: ${user_agent}" \
+            "$paper_url" -o "$RUNNER_TEMP/paper-26.3.jar"
+          test -s "$RUNNER_TEMP/paper-26.3.jar"
+          sha256sum "$RUNNER_TEMP/paper-26.3.jar" | tee "$RUNNER_TEMP/paper.sha256"
+          echo "Selected Paper 26.3 channel: $paper_channel"
+
+      - name: Install pinned Mineflayer 26.3 client
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/frontier-mineflayer"
+          npm install \
+            --prefix "$RUNNER_TEMP/frontier-mineflayer" \
+            --no-save \
+            --package-lock=false \
+            --ignore-scripts \
+            'mineflayer@npm:@wp2508/mineflayer@4.42.2'
+          NODE_PATH="$RUNNER_TEMP/frontier-mineflayer/node_modules" \
+            node -e "const p=require('mineflayer/package.json'); if (p.version !== '4.42.2') process.exit(1);"
+
+      - name: Boot and restart exact Frontier runtime on Paper 26.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tools/smoke-frontier-runtime.sh
+          tools/smoke-frontier-runtime.sh \
+            "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" \
+            "$RUNNER_TEMP/paper-26.3.jar"
+
+      - name: Exercise 1/10/20/40 real Java clients through Frontier boundary
+        shell: bash
+        env:
+          NODE_PATH: ${{ runner.temp }}/frontier-mineflayer/node_modules
+        run: |
+          set -euo pipefail
+          chmod +x tools/smoke-frontier-real-clients.sh
+          tools/smoke-frontier-real-clients.sh \
+            "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" \
+            "$RUNNER_TEMP/paper-26.3.jar"
+
+      - name: Upload Paper runtime smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontier-paper-26-3-runtime-smoke-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/frontier-runtime-smoke/cycle-*.log
+            ${{ runner.temp }}/frontier-runtime-smoke/*.sha256
+            ${{ runner.temp }}/frontier-real-client-smoke/server.log
+            ${{ runner.temp }}/frontier-real-client-smoke/*.sha256
+            ${{ runner.temp }}/frontier-real-client-smoke/case-*/client.log
+            ${{ runner.temp }}/frontier-real-client-smoke/case-*/result.json
+            ${{ runner.temp }}/frontier-real-client-smoke/case-*/evidence.txt
+            ${{ runner.temp }}/paper-runtime-url.txt
+            ${{ runner.temp }}/paper-runtime-channel.txt
+            ${{ runner.temp }}/paper.sha256
+
+      - name: Upload exact runtime binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontier-server-runtime-binaries
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/EnthusiaFrontier-0.1.1.jar
+            ${{ runner.temp }}/frontier.sha256
+            ${{ runner.temp }}/paper-26.3.jar
+            ${{ runner.temp }}/paper.sha256
+            ${{ runner.temp }}/paper-runtime-url.txt
+            ${{ runner.temp }}/paper-runtime-channel.txt
+
+      - name: Commit binaries without overwriting parallel work
+        if: github.ref == 'refs/heads/server/frontier-test-runtime'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          for attempt in $(seq 1 20); do
+            echo "Publication attempt $attempt/20"
+            git fetch origin server/frontier-test-runtime
+            REMOTE=origin/server/frontier-test-runtime
+
+            if ! git diff --quiet "$GITHUB_SHA" "$REMOTE" -- \
+              src tools/smoke-frontier-runtime.sh tools/smoke-frontier-real-clients.sh \
+              tools/frontier-real-client-load.js build.gradle.kts gradle.properties settings.gradle.kts \
+              .github/workflows/frontier-server-runtime-binaries.yml; then
+              echo 'Frontier source/runtime validation definition changed after this run started; refusing to publish stale binaries.' >&2
+              exit 1
+            fi
+
+            git reset --hard "$REMOTE"
+            cp "$RUNNER_TEMP/EnthusiaFrontier-0.1.1.jar" server/plugins/EnthusiaFrontier-0.1.1.jar
+            cp "$RUNNER_TEMP/paper-26.3.jar" server/paper-26.3.jar
+            rm -f server/leaf-1.21.11-179.jar
+
+            EXPECTED_FRONTIER_SHA="$(cat "$RUNNER_TEMP/frontier.sha256")"
+            ACTUAL_FRONTIER_SHA="$(sha256sum server/plugins/EnthusiaFrontier-0.1.1.jar | awk '{print $1}')"
+            test "$EXPECTED_FRONTIER_SHA" = "$ACTUAL_FRONTIER_SHA"
+            PAPER_SHA="$(sha256sum server/paper-26.3.jar | awk '{print $1}')"
+            PAPER_URL="$(cat "$RUNNER_TEMP/paper-runtime-url.txt")"
+            PAPER_CHANNEL="$(cat "$RUNNER_TEMP/paper-runtime-channel.txt")"
+
+            python3 - "$EXPECTED_FRONTIER_SHA" "$GITHUB_SHA" "$PAPER_SHA" "$PAPER_URL" "$PAPER_CHANNEL" <<'PY'
+          from pathlib import Path
+          import re, sys
+
+          sha, source_commit, paper_sha, paper_url, paper_channel = sys.argv[1:]
+          manifest = Path('server/BINARY-MANIFEST.yml')
+          text = manifest.read_text()
+
+          runtime_pattern = r'(?ms)^runtime:\n  java: .*?\n  server:\n    file: .*?\n    sha256: .*?\n    source: .*?(?:\n    channel: .*?)?(?=\nplugins:)'
+          runtime_replacement = (
+              'runtime:\n'
+              '  java: 25\n'
+              '  server:\n'
+              '    file: paper-26.3.jar\n'
+              f'    sha256: {paper_sha}\n'
+              f'    source: {paper_url}\n'
+              f'    channel: {paper_channel}'
+          )
+          text, count = re.subn(runtime_pattern, runtime_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('Could not update runtime block in BINARY-MANIFEST.yml')
+
+          pattern = r'(?m)^  EnthusiaFrontier-0\.1\.1\.jar: [0-9a-f]{64}$'
+          replacement = f'  EnthusiaFrontier-0.1.1.jar: {sha}'
+          text, count = re.subn(pattern, replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('Could not update the Frontier plugin hash in BINARY-MANIFEST.yml')
+
+          begin = '# FRONTIER-PLUGIN-ARTIFACT-BEGIN'
+          end = '# FRONTIER-PLUGIN-ARTIFACT-END'
+          if begin in text:
+              start = text.index(begin)
+              finish = text.index(end, start) + len(end)
+              text = (text[:start].rstrip() + '\n' + text[finish:].lstrip('\n')).rstrip()
+          block = f'''{begin}
+          frontier_plugin_runtime:
+            source_commit: {source_commit}
+            java: 25
+            minecraft: 26.3
+            paper_channel: {paper_channel}
+            artifact: EnthusiaFrontier-0.1.1.jar
+            sha256: {sha}
+          {end}
+          '''
+          manifest.write_text(text.rstrip() + '\n\n' + block)
+          PY
+
+            git add -A -- \
+              server/plugins/EnthusiaFrontier-0.1.1.jar \
+              server/paper-26.3.jar \
+              server/BINARY-MANIFEST.yml
+            if git ls-files --error-unmatch server/leaf-1.21.11-179.jar >/dev/null 2>&1; then
+              git add -A -- server/leaf-1.21.11-179.jar
+            fi
+            if git diff --cached --quiet; then
+              echo 'Runtime binaries already match the validated artifacts.'
+              exit 0
+            fi
+
+            git commit -m 'Publish validated Paper 26.3 and Frontier runtime binaries'
+            if git push origin HEAD:server/frontier-test-runtime; then
+              echo 'Published Paper 26.3 and Frontier runtime binaries.'
+              exit 0
+            fi
+
+            sleep 1
+          done
+
+          echo 'Could not publish runtime binaries after 20 race-safe attempts.' >&2
+          exit 1

@@ -5,6 +5,13 @@ on:
   push:
     branches:
       - main
+      - server/frontier-test-runtime
+    paths:
+      - 'src/**'
+      - 'build.gradle.kts'
+      - 'gradle.properties'
+      - 'tools/run_paper_reclaim_acceptance.py'
+      - '.github/workflows/paper-reclaim-acceptance.yml'
   workflow_dispatch:
 
 permissions:
@@ -13,35 +20,44 @@ permissions:
 jobs:
   reclaim-acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.14.3'
+          gradle-version: '9.2.1'
+
       - name: Build exact-head plugin
         run: gradle clean check shadowJar --no-daemon
-      - name: Resolve stable Paper 1.21.11 runtime
+
+      - name: Resolve Paper 26.3 runtime
         shell: bash
         run: |
           set -euo pipefail
           user_agent='EnthusiaFrontier acceptance (github.com/wsg138/EnthusiaFrontier)'
           curl --fail --silent --show-error --location --retry 3 \
             -H "User-Agent: ${user_agent}" \
-            'https://fill.papermc.io/v3/projects/paper/versions/1.21.11/builds' \
+            'https://fill.papermc.io/v3/projects/paper/versions/26.3/builds' \
             -o paper-builds.json
-          paper_url="$(jq -r '[.[] | select(.channel == "STABLE")] | sort_by(.id // .number) | last | .downloads."server:default".url // empty' paper-builds.json)"
-          test -n "${paper_url}"
-          printf '%s\n' "${paper_url}" | tee paper-runtime-url.txt
+          paper_url=''
+          paper_channel=''
+          for channel in STABLE BETA ALPHA; do
+            candidate="$(jq -r --arg channel "$channel" '[.[] | select(.channel == $channel)] | sort_by(.id // .number) | last | .downloads."server:default".url // empty' paper-builds.json)"
+            if [[ -n "$candidate" ]]; then paper_url="$candidate"; paper_channel="$channel"; break; fi
+          done
+          test -n "$paper_url"
+          printf '%s\n' "$paper_url" | tee paper-runtime-url.txt
+          printf '%s\n' "$paper_channel" | tee paper-runtime-channel.txt
           curl --fail --silent --show-error --location --retry 3 \
             -H "User-Agent: ${user_agent}" \
-            "${paper_url}" -o paper.jar
+            "$paper_url" -o paper.jar
           test -s paper.jar
           sha256sum paper.jar | tee paper.jar.sha256
+
       - name: Locate exact Frontier JAR
         id: plugin
         shell: bash
@@ -51,21 +67,24 @@ jobs:
           test "${#jars[@]}" -eq 1
           sha256sum "${jars[0]}" | tee frontier.jar.sha256
           echo "jar=${jars[0]}" >> "$GITHUB_OUTPUT"
-      - name: Run destructive restart acceptance on real Paper
+
+      - name: Run destructive restart acceptance on real Paper 26.3
         run: >-
           python3 tools/run_paper_reclaim_acceptance.py
           --server-dir build/paper-acceptance
           --paper-jar paper.jar
           --plugin-jar '${{ steps.plugin.outputs.jar }}'
+
       - name: Upload bounded acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: paper-reclaim-acceptance-${{ github.event.pull_request.head.sha || github.sha }}
+          name: paper-26-3-reclaim-acceptance-${{ github.event.pull_request.head.sha || github.sha }}
           if-no-files-found: warn
           retention-days: 14
           path: |
             paper-runtime-url.txt
+            paper-runtime-channel.txt
             paper.jar.sha256
             frontier.jar.sha256
             build/paper-acceptance/logs/

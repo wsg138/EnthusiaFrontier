@@ -1,0 +1,15 @@
+# Enthusia Frontier Test - shared network permissions.
+# Fill these four deployment-only placeholders from the current network LuckPerms config.
+server: EnthusiaFrontierTest
+storage-method: mariadb
+data:
+  address: REPLACE_WITH_LUCKPERMS_DB_HOST:3306
+  database: REPLACE_WITH_LUCKPERMS_DB_NAME
+  username: REPLACE_WITH_LUCKPERMS_DB_USERNAME
+  password: REPLACE_WITH_LUCKPERMS_DB_PASSWORD
+sync-minutes: 3
+watch-files: true
+include-global: true
+apply-global-groups: true
+apply-global-world-groups: true
+apply-global-server-groups: true

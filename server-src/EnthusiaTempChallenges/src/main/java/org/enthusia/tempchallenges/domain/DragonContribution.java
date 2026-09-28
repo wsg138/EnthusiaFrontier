@@ -1,0 +1,1 @@
+package org.enthusia.tempchallenges.domain; import java.time.Instant; import java.util.UUID; public record DragonContribution(UUID playerUuid,double damage,int hits,Instant firstHitAt,Instant lastHitAt){}

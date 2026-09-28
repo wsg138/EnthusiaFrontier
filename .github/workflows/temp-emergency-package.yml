@@ -1,0 +1,105 @@
+name: Build emergency TEMP package
+
+on:
+  push:
+    branches: [server/frontier-test-runtime]
+    paths:
+      - '.github/workflows/temp-emergency-package.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build direct-connect emergency runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build/temp-emergency
+          mkdir -p build/temp-emergency
+          cp -a server/. build/temp-emergency/
+
+          # The repository snapshot intentionally omits private production material and
+          # several live-only plugin binaries. Build a safe Java direct-connect runtime
+          # that can boot without those secrets; full Velocity/Bedrock integration can
+          # be layered on after the backend is healthy.
+          rm -rf \
+            build/temp-emergency/plugins/CoreProtect \
+            build/temp-emergency/plugins/InventoryRollbackPlus \
+            build/temp-emergency/plugins/LuckPerms \
+            build/temp-emergency/plugins/Nexo \
+            build/temp-emergency/plugins/PlaceholderAPI \
+            build/temp-emergency/plugins/TAB \
+            build/temp-emergency/plugins/floodgate \
+            build/temp-emergency/plugins/EnthusiaPlaytime
+          rm -f build/temp-emergency/plugins/EnthusiaTags.jar
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          props = Path('build/temp-emergency/server.properties')
+          text = props.read_text()
+          replacements = {
+              'online-mode=false': 'online-mode=true',
+              'server-port=25568': 'server-port=25566',
+              'query.port=25568': 'query.port=25566',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'missing expected server.properties line: {old}')
+              text = text.replace(old, new, 1)
+          props.write_text(text)
+
+          paper = Path('build/temp-emergency/config/paper-global.yml')
+          text = paper.read_text()
+          if 'enabled: true\n    online-mode: true\n    # Deployment secret:' not in text:
+              raise SystemExit('unexpected Paper Velocity config shape')
+          text = text.replace(
+              'enabled: true\n    online-mode: true\n    # Deployment secret: copy the existing network Velocity forwarding secret here.\n    secret: "REPLACE_WITH_EXISTING_VELOCITY_FORWARDING_SECRET"',
+              'enabled: false\n    online-mode: true\n    # Emergency direct-connect package: Velocity forwarding is intentionally disabled.\n    secret: ""',
+              1,
+          )
+          paper.write_text(text)
+
+          challenges = Path('build/temp-emergency/plugins/EnthusiaTempChallenges/config.yml')
+          text = challenges.read_text()
+          if 'state: ACTIVE' not in text:
+              raise SystemExit('unexpected challenge event state')
+          challenges.write_text(text.replace('state: ACTIVE', 'state: MAINTENANCE', 1))
+          PY
+
+          cat > build/temp-emergency/EMERGENCY-START.txt <<'EOF'
+          Enthusia TEMP emergency backend
+
+          This package is intentionally Java direct-connect first so it can boot without
+          private production network secrets.
+
+          Test2 allocation: 170.205.24.14:25566
+          Runtime: Paper 26.3 on Java 25
+          Challenges: MAINTENANCE until the production LuckPerms/Velocity/Floodgate layer
+          is installed and verified.
+
+          Start this backend first and verify borders/Frontier. Then convert it to the
+          normal Velocity-backed TEMP runtime before enabling public /server TEMP.
+          EOF
+
+          test -s build/temp-emergency/paper-26.3.jar
+          test -s build/temp-emergency/plugins/EnthusiaFrontier-0.1.1.jar
+          test -s build/temp-emergency/plugins/EnthusiaTempChallenges-0.2.0-frontier.1.jar
+          grep -q '^online-mode=true$' build/temp-emergency/server.properties
+          grep -q '^server-port=25566$' build/temp-emergency/server.properties
+          grep -q 'state: MAINTENANCE' build/temp-emergency/plugins/EnthusiaTempChallenges/config.yml
+          ! grep -q 'REPLACE_WITH_EXISTING_VELOCITY_FORWARDING_SECRET' build/temp-emergency/config/paper-global.yml
+
+      - name: Upload phone-deployable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Test2-TEMP-emergency-java
+          retention-days: 7
+          if-no-files-found: error
+          path: build/temp-emergency/

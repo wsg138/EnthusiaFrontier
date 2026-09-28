@@ -1,0 +1,5 @@
+# Add inside the existing [servers] table in velocity.toml.
+TEMP = "REPLACE_WITH_TEST2_BACKEND_HOST:REPLACE_WITH_TEST2_BACKEND_PORT"
+
+# Do NOT add TEMP to the normal try/fallback list.
+# Players join this backend explicitly with /server TEMP.
