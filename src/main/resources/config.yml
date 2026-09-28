@@ -18,70 +18,70 @@ tracking:
   mutation-queue-capacity: 65536
   mutation-batch-size: 512
 
-# Primary safety mechanism. These are WHOLE-SERVER limits, not per-player limits.
-# Frontier warms the current safety buffer before the player reaches a boundary and
-# then queues only the newly exposed leading strip for ordinary one-chunk travel.
+# Whole-server emergency generation budget. During healthy live play Frontier does not
+# hard-gate player movement; Paper loads terrain normally and the adaptive per-player
+# throttle below reacts to MSPT. This queue becomes important when Frontier must build a
+# proven-ready buffer in paused/unhealthy fail-safe mode or for explicit generation work.
 generation-shield:
   enabled: true
   queue-capacity: 65536
-  # Moonrise 1.21.11's native player loader can generate two chunks beyond its API
-  # view distance. Frontier therefore requires at least 2 here so the proven-ready
-  # buffer fully covers that native footprint before movement can advance.
+  # Moonrise's native player loader can extend beyond its API view distance. Keep the
+  # guard margin for the emergency hard-gate path; it is not a normal-play movement tax.
   extra-guard-radius-chunks: 2
   max-guard-radius-chunks: 36
   refresh-checks-per-tick: 4096
-  sample-period-ticks: 20
-  recovery-hysteresis-mspt: 2.0
+  # React quickly enough to catch generation pressure before TPS visibly collapses.
+  sample-period-ticks: 5
+  recovery-hysteresis-mspt: 3.0
   levels:
     - name: healthy
       enter-mspt: 0.0
-      chunks-per-second: 16.0
-      max-concurrent: 4
+      chunks-per-second: 256.0
+      max-concurrent: 16
     - name: elevated
       enter-mspt: 25.0
-      chunks-per-second: 10.0
-      max-concurrent: 3
+      chunks-per-second: 96.0
+      max-concurrent: 8
     - name: pressured
       enter-mspt: 35.0
-      chunks-per-second: 6.0
-      max-concurrent: 2
+      chunks-per-second: 32.0
+      max-concurrent: 4
     - name: critical
       enter-mspt: 45.0
-      chunks-per-second: 4.0
-      max-concurrent: 1
-    # 50 ms/tick is the 20 TPS budget. New frontier generation pauses here so
-    # exploration cannot keep pushing an already-over-budget server into a lag spiral.
+      chunks-per-second: 8.0
+      max-concurrent: 2
+    # Around the 20 TPS tick budget, stop new Frontier admissions and switch movement
+    # to the proven-ready emergency buffer until server load recovers.
     - name: emergency
-      enter-mspt: 50.0
+      enter-mspt: 49.5
       chunks-per-second: 0.0
       max-concurrent: 0
 
-# Secondary defense-in-depth only. Paper/Moonrise applies these per player, so this
-# section must never be treated as the aggregate server generation budget. In Paper,
-# a generation rate of 0 is not a true pause; the global shield owns emergency pausing.
+# Primary live-play generation control. Paper applies these per player and Frontier
+# changes them from measured MSPT. -1 means Paper's limiter is disabled while healthy.
 throttle:
   require-supported-adapter: true
-  sample-period-ticks: 20
-  recovery-hysteresis-mspt: 2.0
+  sample-period-ticks: 5
+  recovery-hysteresis-mspt: 3.0
   levels:
     - name: healthy
       enter-mspt: 0.0
-      max-generation-rate: 32.0
-      max-concurrent-generations: 4
+      max-generation-rate: -1.0
+      max-concurrent-generations: -1
     - name: elevated
       enter-mspt: 25.0
-      max-generation-rate: 16.0
-      max-concurrent-generations: 3
+      max-generation-rate: 128.0
+      max-concurrent-generations: 12
     - name: pressured
       enter-mspt: 35.0
-      max-generation-rate: 8.0
-      max-concurrent-generations: 2
+      max-generation-rate: 48.0
+      max-concurrent-generations: 6
     - name: critical
       enter-mspt: 45.0
-      max-generation-rate: 4.0
-      max-concurrent-generations: 1
+      max-generation-rate: 12.0
+      max-concurrent-generations: 2
     - name: emergency
-      enter-mspt: 50.0
+      enter-mspt: 49.5
       max-generation-rate: 2.0
       max-concurrent-generations: 1
 
