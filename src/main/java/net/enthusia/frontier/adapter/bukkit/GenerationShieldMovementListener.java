@@ -260,6 +260,8 @@ public final class GenerationShieldMovementListener implements Listener {
         String message;
         if (status == GenerationBufferStatus.FAIL_CLOSED) {
             message = "Frontier exploration is paused for server safety.";
+        } else if (buffers.generationPaused()) {
+            message = "Frontier generation is paused until server load recovers.";
         } else {
             int remaining = buffers.pendingChunks(requester(player));
             message = remaining > 0
