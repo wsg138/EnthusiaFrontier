@@ -9,7 +9,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -27,6 +26,7 @@ import org.bukkit.entity.Vehicle;
 import org.bukkit.event.entity.EntityTeleportEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitScheduler;
@@ -57,6 +57,45 @@ class GenerationShieldMovementListenerTest {
         when(cycleRoot.getPassengers()).thenReturn(List.of(cycleChild));
         when(cycleChild.getPassengers()).thenReturn(List.of(cycleRoot));
         assertNull(GenerationShieldMovementListener.playerPassenger(cycleRoot));
+    }
+
+    @Test
+    void healthyCrossChunkMovementIsSoftGatedAndNotCancelled() {
+        GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
+        when(buffers.canSoftAdvance()).thenReturn(true);
+        GenerationShieldMovementListener listener = listener(buffers, settings(2, 12));
+        World world = world();
+        Player player = player(4, 7, 5);
+        Location from = location(world, 0, 0);
+        Location to = location(world, 160, 0);
+        PlayerMoveEvent event = mock(PlayerMoveEvent.class);
+        when(event.getPlayer()).thenReturn(player);
+        when(event.getFrom()).thenReturn(from);
+        when(event.getTo()).thenReturn(to);
+
+        listener.onMove(event);
+
+        verify(event, never()).setCancelled(true);
+        verify(buffers, never()).prepare(any(), any(), anyInt(), anyInt(), anyInt());
+        verify(buffers, never()).prewarm(any(), any(), anyInt(), anyInt(), anyInt(), anyInt(), anyInt());
+    }
+
+    @Test
+    void healthyTeleportDoesNotRequireFullReadinessSquare() {
+        GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
+        when(buffers.canSoftAdvance()).thenReturn(true);
+        GenerationShieldMovementListener listener = listener(buffers, settings(2, 12));
+        World world = world();
+        Player player = player(4, 7, 5);
+        Location destination = location(world, 1600, 1600);
+        PlayerTeleportEvent event = mock(PlayerTeleportEvent.class);
+        when(event.getPlayer()).thenReturn(player);
+        when(event.getTo()).thenReturn(destination);
+
+        listener.onTeleport(event);
+
+        verify(event, never()).setCancelled(true);
+        verify(buffers, never()).prepare(any(), any(), anyInt(), anyInt(), anyInt());
     }
 
     @Test
@@ -139,7 +178,9 @@ class GenerationShieldMovementListenerTest {
         listener.onMove(event);
 
         verify(event).setCancelled(true);
-        verifyNoInteractions(buffers);
+        verify(buffers).canSoftAdvance();
+        verify(buffers, never()).prepare(any(), any(), anyInt(), anyInt(), anyInt());
+        verify(buffers, never()).prewarm(any(), any(), anyInt(), anyInt(), anyInt(), anyInt(), anyInt());
     }
 
     @Test

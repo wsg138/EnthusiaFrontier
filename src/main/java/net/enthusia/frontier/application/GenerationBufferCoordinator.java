@@ -43,6 +43,9 @@ public final class GenerationBufferCoordinator {
                     : GenerationBufferStatus.PENDING;
         }
 
+        if (existing != null) {
+            requeueReleasedForOtherPending(requesterId, shield.cancelQueuedKeys(requesterId));
+        }
         PendingBuffer pending = new PendingBuffer(center, new LinkedHashSet<>(), new LinkedHashSet<>());
         byRequester.put(requesterId, pending);
         for (int deltaX = -radius; deltaX <= radius; deltaX++) {
@@ -62,9 +65,8 @@ public final class GenerationBufferCoordinator {
 
     /**
      * Opportunistically submits only the newly exposed strip for an adjacent movement
-     * prediction. The current buffer must already be READY before callers use this path,
-     * so rescanning the overlapping square would add no safety and can cost hundreds of
-     * hot-path readiness checks when a player changes direction repeatedly.
+     * prediction. This remains a hard-gate helper only; normal healthy movement relies
+     * on Paper's own loader rather than constructing proactive Frontier queues.
      */
     public synchronized void prewarm(
             String requesterId,
@@ -177,6 +179,7 @@ public final class GenerationBufferCoordinator {
         String requester = Objects.requireNonNull(requesterId, "requesterId");
         byRequester.remove(requester);
         prewarmByRequester.remove(requester);
+        requeueReleasedForOtherPending(requester, shield.cancelQueuedKeys(requester));
     }
 
     public synchronized int pendingBuffers() {
@@ -194,8 +197,34 @@ public final class GenerationBufferCoordinator {
         return pending == null ? 0 : pending.missing().size();
     }
 
+    /**
+     * Healthy generation is intentionally soft-gated for live play. Paper's adaptive
+     * generation throttle remains active, while Frontier only hard-blocks movement if
+     * the global shield is paused or unhealthy.
+     */
+    public boolean canSoftAdvance() {
+        return shield.healthy() && !shield.limits().paused();
+    }
+
     public boolean generationPaused() {
         return shield.limits().paused();
+    }
+
+    private void requeueReleasedForOtherPending(String cancelledRequester, Set<ChunkKey> released) {
+        if (released.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, PendingBuffer> entry : byRequester.entrySet()) {
+            if (entry.getKey().equals(cancelledRequester)) {
+                continue;
+            }
+            PendingBuffer pending = entry.getValue();
+            for (ChunkKey key : released) {
+                if (pending.missing().contains(key)) {
+                    pending.unsubmitted().add(key);
+                }
+            }
+        }
     }
 
     private boolean submitOrResolve(String requesterId, PendingBuffer pending, ChunkKey key) {

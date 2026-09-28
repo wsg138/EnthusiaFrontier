@@ -31,13 +31,17 @@ import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
- * Fail-closed movement boundary for the generation shield.
+ * Adaptive movement boundary for Frontier generation.
  *
- * <p>Normal movement and player/entity teleports are stopped before unsafe advancement.
- * Current buffers are prepared while players are still inside a chunk, then only the
- * newly exposed leading strip is opportunistically prewarmed in the likely direction
- * of travel. VehicleMoveEvent is not cancellable, so unsafe vehicle advancement is
- * rolled back on the next server task.</p>
+ * <p>While the global generation shield is healthy, player movement and teleports are
+ * soft-gated: Frontier does not artificially stop travel or require an entire
+ * view-distance square before movement may complete. Paper's own chunk loader and
+ * Frontier's adaptive Paper generation throttle handle normal live exploration. If the
+ * global shield pauses or becomes unhealthy, Frontier falls back to the full fail-closed
+ * readiness buffer before movement may advance.</p>
+ *
+ * <p>VehicleMoveEvent is not cancellable, so unsafe vehicle advancement in hard-gate
+ * mode is rolled back on the next server task.</p>
  */
 public final class GenerationShieldMovementListener implements Listener {
     private static final long MESSAGE_COOLDOWN_NANOS = 1_000_000_000L;
@@ -63,7 +67,9 @@ public final class GenerationShieldMovementListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent event) {
-        prepare(event.getPlayer(), event.getPlayer().getLocation());
+        if (!buffers.canSoftAdvance()) {
+            prepare(event.getPlayer(), event.getPlayer().getLocation());
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -72,6 +78,11 @@ public final class GenerationShieldMovementListener implements Listener {
             return;
         }
         Location to = event.getTo();
+
+        if (buffers.canSoftAdvance()) {
+            return;
+        }
+
         if (sameChunk(event.getFrom(), to)) {
             GenerationBufferStatus current = prepare(event.getPlayer(), to);
             if (current == GenerationBufferStatus.READY) {
@@ -89,6 +100,9 @@ public final class GenerationShieldMovementListener implements Listener {
         if (event instanceof PlayerPortalEvent) {
             return;
         }
+        if (buffers.canSoftAdvance()) {
+            return;
+        }
         if (!allow(event.getPlayer(), event.getTo())) {
             event.setCancelled(true);
         }
@@ -96,6 +110,9 @@ public final class GenerationShieldMovementListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPortal(PlayerPortalEvent event) {
+        if (buffers.canSoftAdvance()) {
+            return;
+        }
         if (!allow(event.getPlayer(), event.getTo())) {
             event.setCancelled(true);
         }
@@ -104,7 +121,10 @@ public final class GenerationShieldMovementListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityTeleport(EntityTeleportEvent event) {
         Player rider = playerPassenger(event.getEntity());
-        if (rider != null && !allow(rider, event.getTo())) {
+        if (rider == null || buffers.canSoftAdvance()) {
+            return;
+        }
+        if (!allow(rider, event.getTo())) {
             event.setCancelled(true);
         }
     }
@@ -116,6 +136,11 @@ public final class GenerationShieldMovementListener implements Listener {
         if (rider == null) {
             return;
         }
+
+        if (buffers.canSoftAdvance()) {
+            return;
+        }
+
         if (sameChunk(event.getFrom(), event.getTo())) {
             GenerationBufferStatus current = prepare(rider, event.getTo());
             if (current == GenerationBufferStatus.READY) {

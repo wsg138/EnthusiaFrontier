@@ -4,11 +4,11 @@ EnthusiaFrontier is a Leaf/Paper world-frontier manager for large SMP worlds. It
 
 The runtime has three related safety layers:
 
-1. **Global Generation Shield** — Frontier owns one bounded, requester-fair queue for virgin terrain generation. Rate and concurrency budgets apply once to the whole server, so adding explorers does not multiply the generation budget. MSPT can reduce that budget all the way to a true `0` new admissions.
-2. **Paper/Moonrise generation throttle** — Paper's existing per-player rate/concurrency controls remain enabled as defense in depth. They are not treated as the server-wide budget, and Paper rate `0` is not used as a pause mechanism.
+1. **Global Generation Shield** — Frontier owns one bounded, requester-fair queue for explicit/fail-safe virgin terrain generation. Rate and concurrency budgets apply once to the whole server, and MSPT can reduce that budget all the way to a true `0` new admissions.
+2. **Paper/Moonrise generation throttle** — Paper's existing per-player rate/concurrency controls are adjusted from measured MSPT. Healthy live play can run without an artificial player generation cap; as tick time rises Frontier progressively reduces generation pressure.
 3. **Frontier lifecycle management** — newly generated chunks outside the permanent core are tracked, meaningful player activity permanently protects terrain, and untouched frontier terrain can become reclaimable after the retention period.
 
-Movement into managed frontier terrain is fail-closed until a generated safety buffer is ready. The buffer accounts for runtime view distance, send-view distance, simulation distance, and a configured safety margin; if the configured maximum cannot cover that requirement, Frontier restricts further frontier advancement instead of silently weakening the guard.
+During healthy live play, Frontier does **not** cancel normal walking, Elytra/creative flight, vehicles, portals, or teleports just because a full view-distance safety square has not been pregenerated. Paper performs normal chunk loading while Frontier monitors MSPT and adapts its generation throttle. If the global generation shield is paused or unhealthy, Frontier switches to a fail-closed emergency movement mode: a proven-ready buffer based on runtime view distance, send-view distance, simulation distance, and the configured safety margin must be ready before further managed-frontier advancement.
 
 For production Enthusia the intended permanent overworld core is `100000` blocks in each horizontal direction. For disposable testing, `core-radius-blocks: 0` means **the entire world is managed by Frontier**.
 

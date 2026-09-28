@@ -75,6 +75,22 @@ class GenerationShieldServiceTest {
     }
 
     @Test
+    void cancelQueuedDropsOnlyRequesterWorkAndReleasesDedupeKeys() {
+        Harness harness = new Harness(16, true);
+        ChunkKey first = key(10, 10);
+        ChunkKey second = key(11, 10);
+        ChunkKey other = key(12, 10);
+        assertEquals(GenerationAdmission.QUEUED, harness.service.request("moving", first));
+        assertEquals(GenerationAdmission.QUEUED, harness.service.request("moving", second));
+        assertEquals(GenerationAdmission.QUEUED, harness.service.request("other", other));
+
+        assertEquals(2, harness.service.cancelQueued("moving"));
+        assertEquals(1, harness.service.metrics().queued());
+        assertEquals(GenerationAdmission.QUEUED, harness.service.request("other", first));
+        assertEquals(2, harness.service.metrics().queued());
+    }
+
+    @Test
     void boundedQueueRejectsExcessWithoutLosingExistingRequests() {
         Harness harness = new Harness(2, true);
         assertEquals(GenerationAdmission.QUEUED, harness.service.request("a", key(1, 2)));
