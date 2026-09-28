@@ -138,6 +138,11 @@ public final class GenerationShieldService implements AutoCloseable {
         return GenerationAdmission.QUEUED;
     }
 
+    /** Removes not-yet-started work and returns how many queued chunks were dropped. */
+    public synchronized int cancelQueued(String requesterId) {
+        return cancelQueuedKeys(requesterId).size();
+    }
+
     /**
      * Removes not-yet-started generation work owned by one requester.
      *
@@ -148,7 +153,7 @@ public final class GenerationShieldService implements AutoCloseable {
      *
      * @return immutable set of queued chunks that were removed
      */
-    public synchronized Set<ChunkKey> cancelQueued(String requesterId) {
+    public synchronized Set<ChunkKey> cancelQueuedKeys(String requesterId) {
         String requester = Objects.requireNonNull(requesterId, "requesterId");
         ArrayDeque<ChunkKey> requesterQueue = queuedByRequester.remove(requester);
         requesterOrder.removeIf(requester::equals);
@@ -237,9 +242,6 @@ public final class GenerationShieldService implements AutoCloseable {
                     outstanding.remove(key);
                     continue;
                 }
-                // Install the one-chunk observation credit before entering Paper. If the
-                // platform fires ChunkLoadEvent re-entrantly or on another thread, the
-                // requested chunk is still distinguished from collateral generation.
                 observationCredits.add(key);
                 CompletableFuture<Void> future = Objects.requireNonNull(
                         generation.generate(key), "generation port returned null future");
