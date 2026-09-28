@@ -142,28 +142,29 @@ public final class GenerationShieldService implements AutoCloseable {
      * Removes not-yet-started generation work owned by one requester.
      *
      * <p>In-flight work is intentionally left alone because Paper generation futures are
-     * not safely cancellable. Removing queued ownership also releases the global dedupe
-     * key so another requester may immediately submit the chunk if it is still needed.</p>
+     * not safely cancellable. Returned keys have been released from global deduplication;
+     * callers that know another pending requester still needs one of those chunks can
+     * re-submit it immediately.</p>
      *
-     * @return number of queued chunks removed
+     * @return immutable set of queued chunks that were removed
      */
-    public synchronized int cancelQueued(String requesterId) {
+    public synchronized Set<ChunkKey> cancelQueued(String requesterId) {
         String requester = Objects.requireNonNull(requesterId, "requesterId");
         ArrayDeque<ChunkKey> requesterQueue = queuedByRequester.remove(requester);
         requesterOrder.removeIf(requester::equals);
         if (requesterQueue == null || requesterQueue.isEmpty()) {
-            return 0;
+            return Set.of();
         }
 
-        int removed = requesterQueue.size();
-        for (ChunkKey key : requesterQueue) {
+        Set<ChunkKey> released = Set.copyOf(requesterQueue);
+        for (ChunkKey key : released) {
             outstanding.remove(key);
         }
-        queued = Math.max(0, queued - removed);
+        queued = Math.max(0, queued - released.size());
         if (queued == 0) {
             scheduleInitialized = false;
         }
-        return removed;
+        return released;
     }
 
     /**
