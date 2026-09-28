@@ -44,10 +44,21 @@ function applyMineflayer263TeleportPatch() {
     throw new Error(`Refusing to patch unexpected Mineflayer movement echo; expected one exact tail, found ${occurrences}`);
   }
 
-  const deferredTail = `    // ${marker}: Minecraft 26.3/Paper validates the teleport acknowledgement
-    // before accepting the matching movement echo. Mirror vanilla/upstream cadence
-    // by sending that echo one client tick later, and discard it if a newer forced
-    // move superseded this teleport in the meantime.
+  const deferredTail = `    // ${marker}: these Frontier validation clients deliberately disable local
+    // physics and only observe server-driven teleports. For that mode the real 26.3
+    // teleport_confirm above is the complete acknowledgement we need; emitting the
+    // fork's extra position_look packet only exercises a known Mineflayer 26.3 bug
+    // and Paper rejects it as invalid movement. Keep normal physics-enabled clients
+    // on the delayed echo path below so this patch remains narrowly scoped to CI.
+    if (!bot.physicsEnabled) {
+      shouldUsePhysics = false
+      bot.jumpTicks = 0
+      lastSentYaw = bot.entity.yaw
+      lastSentPitch = bot.entity.pitch
+      bot.emit('forcedMove')
+      return
+    }
+
     const delayedPos = pos.clone()
     const delayedYaw = newYaw
     const delayedPitch = newPitch
@@ -63,14 +74,14 @@ function applyMineflayer263TeleportPatch() {
     }, PHYSICS_INTERVAL_MS)`;
 
   fs.writeFileSync(physicsFile, source.replace(oldTail, deferredTail));
-  console.log('MINEFLAYER_26_3_TELEPORT_PATCH applied fork=wp2508/mineflayer@4.42.2 cadence=next-client-tick');
+  console.log('MINEFLAYER_26_3_TELEPORT_PATCH applied fork=wp2508/mineflayer@4.42.2 mode=ack-only-when-physics-disabled');
 }
 
 // The pinned @wp2508/mineflayer 4.42.2 fork supplies Minecraft 26.3 protocol
 // data and the widened 26.3 teleport-confirm fields. Its published physics
-// implementation still echoes movement in the same callback; Paper 26.3 can
-// reject that race under concurrent logins. Patch only that exact disposable
-// dependency tail to the one-client-tick ordering used by the upstream fix.
+// implementation sends an additional movement echo that Paper 26.3 rejects in
+// the physics-disabled validation mode used here. Patch only that exact disposable
+// dependency tail; production server artifacts are never modified.
 applyMineflayer263TeleportPatch();
 const mineflayer = require('mineflayer');
 
