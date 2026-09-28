@@ -10,6 +10,7 @@ SERVER_LOG="$SMOKE/server.log"
 PORT=25590
 MINEFLAYER_VERSION=4.42.2
 CLIENT_TIMEOUT_MS=600000
+WALK_TIMEOUT_MS=240000
 CLIENT_RETRY_INTERVAL_SECONDS=5
 
 rm -rf "$SMOKE"
@@ -118,6 +119,69 @@ teleport_case_players() {
   done
 }
 
+wait_for_connected_and_positioned() {
+  local client_pid="$1" case_dir="$2" count="$3" prefix="$4" direction="$5" start_axis="$6"
+  for _ in $(seq 1 90); do
+    [[ -s "$case_dir/connected.json" ]] && break
+    kill -0 "$client_pid" 2>/dev/null || { wait "$client_pid" || true; echo "Clients exited before $case_dir connected." >&2; return 1; }
+    sleep 1
+  done
+  [[ -s "$case_dir/connected.json" ]] || { kill "$client_pid" 2>/dev/null || true; return 1; }
+
+  for _ in $(seq 1 90); do
+    [[ -s "$case_dir/positioned.json" ]] && break
+    kill -0 "$client_pid" 2>/dev/null || { wait "$client_pid" || true; echo "Clients exited before $case_dir was positioned." >&2; return 1; }
+    teleport_case_players "$count" "$prefix" "$direction" "$start_axis"
+    sleep 1
+  done
+  [[ -s "$case_dir/positioned.json" ]] || { kill "$client_pid" 2>/dev/null || true; return 1; }
+}
+
+run_walk_case() {
+  local case_dir="$SMOKE/case-walk-1"
+  local count=1 prefix='FrWalk' direction='west' start_axis=-8008 target_axis=-8216
+  local drive_attempts=$(( (WALK_TIMEOUT_MS + CLIENT_RETRY_INTERVAL_SECONDS * 1000 - 1) / (CLIENT_RETRY_INTERVAL_SECONDS * 1000) + 1 ))
+  mkdir -p "$case_dir"
+
+  node "$ROOT/tools/frontier-real-client-load.js" \
+    --host 127.0.0.1 --port "$PORT" --count "$count" --prefix "$prefix" \
+    --direction "$direction" --marker-dir "$case_dir" \
+    --start-axis "$start_axis" --target-axis "$target_axis" \
+    --timeout-ms "$WALK_TIMEOUT_MS" --movement-mode client-walk \
+    >"$case_dir/client.log" 2>&1 &
+  local client_pid=$!
+
+  wait_for_connected_and_positioned "$client_pid" "$case_dir" "$count" "$prefix" "$direction" "$start_axis"
+  touch "$case_dir/go"
+  for _ in $(seq 1 "$drive_attempts"); do
+    [[ -s "$case_dir/result.json" ]] && break
+    kill -0 "$client_pid" 2>/dev/null || break
+    printf 'frontier status\n' >&"$CONSOLE_FD"
+    sleep "$CLIENT_RETRY_INTERVAL_SECONDS"
+  done
+
+  set +e
+  wait "$client_pid"
+  client_rc=$?
+  set -e
+  if (( client_rc != 0 )); then
+    echo 'Real walking-client boundary case failed.' >&2
+    return "$client_rc"
+  fi
+
+  python3 - "$case_dir/result.json" <<'PY'
+import json, sys
+result=json.load(open(sys.argv[1]))
+assert result.get('status') == 'passed', result
+assert result.get('count') == 1, result
+assert len(result.get('positions', [])) == 1, result
+assert result.get('movement_mode') == 'client-walk', result
+print(f"FRONTIER_REAL_WALK_CASE elapsed_ms={result['elapsed_ms']:.1f}")
+PY
+  printf 'frontier status\n' >&"$CONSOLE_FD"
+  sleep 1
+}
+
 run_case() {
   local count="$1" prefix="$2" direction="$3" start_axis="$4" target_axis="$5"
   local case_dir="$SMOKE/case-$count"
@@ -128,30 +192,15 @@ run_case() {
     --host 127.0.0.1 --port "$PORT" --count "$count" --prefix "$prefix" \
     --direction "$direction" --marker-dir "$case_dir" \
     --start-axis "$start_axis" --target-axis "$target_axis" \
-    --timeout-ms "$CLIENT_TIMEOUT_MS" >"$case_dir/client.log" 2>&1 &
+    --timeout-ms "$CLIENT_TIMEOUT_MS" --movement-mode server-teleport-with-real-network-clients \
+    >"$case_dir/client.log" 2>&1 &
   local client_pid=$!
 
-  for _ in $(seq 1 90); do
-    [[ -s "$case_dir/connected.json" ]] && break
-    kill -0 "$client_pid" 2>/dev/null || { wait "$client_pid" || true; echo "Clients exited before case $count connected." >&2; return 1; }
-    sleep 1
-  done
-  [[ -s "$case_dir/connected.json" ]] || { kill "$client_pid" 2>/dev/null || true; return 1; }
-
-  for _ in $(seq 1 90); do
-    [[ -s "$case_dir/positioned.json" ]] && break
-    kill -0 "$client_pid" 2>/dev/null || { wait "$client_pid" || true; echo "Clients exited before case $count was positioned." >&2; return 1; }
-    teleport_case_players "$count" "$prefix" "$direction" "$start_axis"
-    sleep 1
-  done
-  [[ -s "$case_dir/positioned.json" ]] || { kill "$client_pid" 2>/dev/null || true; return 1; }
+  wait_for_connected_and_positioned "$client_pid" "$case_dir" "$count" "$prefix" "$direction" "$start_axis"
 
   # Keep real 26.3 network clients connected while Frontier guards repeated
-  # server-side teleport requests at the generation boundary. The synthetic
-  # load suite already exercises command-pressure behavior, so this real-client
-  # gate retries at a measured cadence instead of flooding a shield capped at
-  # eight generation starts per second. Keep driving for the full client timeout
-  # so a chunk that becomes ready late still receives a final teleport attempt.
+  # server-side teleport requests at the generation boundary. The walking case above
+  # covers ordinary client movement; these cases exercise aggregate 1/10/20/40 load.
   touch "$case_dir/go"
   for _ in $(seq 1 "$drive_attempts"); do
     [[ -s "$case_dir/result.json" ]] && break
@@ -184,6 +233,7 @@ PY
   sleep 1
 }
 
+run_walk_case
 run_case 1  FrE east   8008  8216
 run_case 10 FrW west  -7992 -8200
 run_case 20 FrS south  8008  8216
@@ -212,4 +262,4 @@ if grep -qE 'EnthusiaFrontier failed safe during startup|Global generation shiel
 fi
 
 trap - EXIT
-echo 'FRONTIER_REAL_CLIENT_LOAD_OK clients=1,10,20,40 minecraft=26.3 real_network_clients=true movement=guarded-server-teleport'
+echo 'FRONTIER_REAL_CLIENT_LOAD_OK walk=1 clients=1,10,20,40 minecraft=26.3 real_network_clients=true'

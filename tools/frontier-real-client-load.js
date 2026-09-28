@@ -44,12 +44,11 @@ function applyMineflayer263TeleportPatch() {
     throw new Error(`Refusing to patch unexpected Mineflayer movement echo; expected one exact tail, found ${occurrences}`);
   }
 
-  const deferredTail = `    // ${marker}: these Frontier validation clients deliberately disable local
-    // physics and only observe server-driven teleports. For that mode the real 26.3
-    // teleport_confirm above is the complete acknowledgement we need; emitting the
-    // fork's extra position_look packet only exercises a known Mineflayer 26.3 bug
-    // and Paper rejects it as invalid movement. Keep normal physics-enabled clients
-    // on the delayed echo path below so this patch remains narrowly scoped to CI.
+  const deferredTail = `    // ${marker}: Frontier validation uses both physics-disabled clients for
+    // deterministic server-driven teleport load and a physics-enabled client for a
+    // genuine walking boundary check. The real 26.3 teleport_confirm above is enough
+    // for the physics-disabled mode; normal physics-enabled clients retain the delayed
+    // position echo below.
     if (!bot.physicsEnabled) {
       shouldUsePhysics = false
       bot.jumpTicks = 0
@@ -74,14 +73,12 @@ function applyMineflayer263TeleportPatch() {
     }, PHYSICS_INTERVAL_MS)`;
 
   fs.writeFileSync(physicsFile, source.replace(oldTail, deferredTail));
-  console.log('MINEFLAYER_26_3_TELEPORT_PATCH applied fork=wp2508/mineflayer@4.42.2 mode=ack-only-when-physics-disabled');
+  console.log('MINEFLAYER_26_3_TELEPORT_PATCH applied fork=wp2508/mineflayer@4.42.2');
 }
 
 // The pinned @wp2508/mineflayer 4.42.2 fork supplies Minecraft 26.3 protocol
-// data and the widened 26.3 teleport-confirm fields. Its published physics
-// implementation sends an additional movement echo that Paper 26.3 rejects in
-// the physics-disabled validation mode used here. Patch only that exact disposable
-// dependency tail; production server artifacts are never modified.
+// data and the widened 26.3 teleport-confirm fields. Patch only the exact
+// disposable dependency tail used by CI; production server artifacts are never modified.
 applyMineflayer263TeleportPatch();
 const mineflayer = require('mineflayer');
 
@@ -140,6 +137,16 @@ function reached(position, target, direction) {
     : position <= target + 1;
 }
 
+function yawFor(direction) {
+  switch (direction) {
+    case 'south': return 0;
+    case 'west': return Math.PI / 2;
+    case 'north': return Math.PI;
+    case 'east': return -Math.PI / 2;
+    default: throw new Error(`unsupported direction ${direction}`);
+  }
+}
+
 function positions(bots) {
   return bots.filter(bot => bot.entity).map(bot => ({
     username: bot.username,
@@ -160,6 +167,12 @@ async function main() {
   const startAxis = integer(args, 'start-axis');
   const targetAxis = integer(args, 'target-axis');
   const timeoutMs = integer(args, 'timeout-ms');
+  const movementMode = args.get('movement-mode') || 'server-teleport-with-real-network-clients';
+  const walking = movementMode === 'client-walk';
+  if (!walking && movementMode !== 'server-teleport-with-real-network-clients') {
+    throw new Error('--movement-mode must be client-walk or server-teleport-with-real-network-clients');
+  }
+  if (walking && count !== 1) throw new Error('client-walk validation currently requires --count 1');
   if (count < 1 || count > 40) throw new Error('--count must be within 1..40');
   if (!['east', 'west', 'south', 'north'].includes(direction)) throw new Error('--direction must be east, west, south, or north');
   if (prefix.length + 2 > 16) throw new Error('bot usernames would exceed Minecraft 16-character limit');
@@ -182,19 +195,16 @@ async function main() {
       username,
       version: '26.3',
       auth: 'offline',
-      physicsEnabled: false,
+      physicsEnabled: walking,
     });
 
-    // These clients only observe server-driven Frontier teleports. Keep local
-    // physics disabled so the test measures server-side generation admission,
-    // not autonomous bot motion.
-    bot.physicsEnabled = false;
+    bot.physicsEnabled = walking;
 
     bots.push(bot);
     spawned.push(new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`${username} did not spawn within 45 seconds`)), 45_000);
       bot.once('spawn', () => {
-        bot.physicsEnabled = false;
+        bot.physicsEnabled = walking;
         clearTimeout(timer);
         resolve();
       });
@@ -214,8 +224,8 @@ async function main() {
 
   try {
     await Promise.all(spawned);
-    fs.writeFileSync(connectedFile, JSON.stringify({ count, usernames: bots.map(bot => bot.username) }, null, 2));
-    console.log(`FRONTIER_REAL_CLIENT_CONNECTED count=${count}`);
+    fs.writeFileSync(connectedFile, JSON.stringify({ count, usernames: bots.map(bot => bot.username), movement_mode: movementMode }, null, 2));
+    console.log(`FRONTIER_REAL_CLIENT_CONNECTED count=${count} movement=${movementMode}`);
 
     const positionedDeadline = Date.now() + 60_000;
     while (!bots.every(bot => atStart(bot, startAxis, direction))) {
@@ -230,14 +240,26 @@ async function main() {
     console.log(`FRONTIER_REAL_CLIENT_POSITIONED count=${count}`);
 
     await waitForFile(goFile, 60_000, fatalState);
+    if (walking) {
+      await bots[0].look(yawFor(direction), 0, true);
+      bots[0].setControlState('forward', true);
+      bots[0].setControlState('sprint', true);
+      console.log(`FRONTIER_REAL_CLIENT_WALKING direction=${direction}`);
+    }
+
     const started = process.hrtime.bigint();
     const deadline = Date.now() + timeoutMs;
+    let nextProgressLog = Date.now();
     while (true) {
       if (fatalState.error) throw fatalState.error;
       if (bots.every(bot => reached(axisPosition(bot, direction), targetAxis, direction))) break;
       if (Date.now() >= deadline) {
         const observed = bots.map(bot => `${bot.username}=${axisPosition(bot, direction).toFixed(2)}`).join(',');
-        throw new Error(`server-driven boundary teleport timed out; positions=${observed}`);
+        throw new Error(`${walking ? 'client walk' : 'server-driven boundary teleport'} timed out; positions=${observed}`);
+      }
+      if (walking && Date.now() >= nextProgressLog) {
+        console.log(`FRONTIER_REAL_CLIENT_WALK_PROGRESS axis=${axisPosition(bots[0], direction).toFixed(2)} target=${targetAxis}`);
+        nextProgressLog = Date.now() + 5_000;
       }
       await sleep(100);
     }
@@ -246,18 +268,19 @@ async function main() {
     const result = {
       status: 'passed', count, direction, elapsed_ms: elapsedMs,
       start_axis: startAxis, target_axis: targetAxis, positions: positions(bots),
-      movement_mode: 'server-teleport-with-real-network-clients',
+      movement_mode: movementMode,
     };
     fs.writeFileSync(resultFile, JSON.stringify(result, null, 2));
-    console.log(`FRONTIER_REAL_CLIENT_REACHED count=${count} elapsed_ms=${elapsedMs.toFixed(1)}`);
+    console.log(`FRONTIER_REAL_CLIENT_REACHED count=${count} movement=${movementMode} elapsed_ms=${elapsedMs.toFixed(1)}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    fs.writeFileSync(resultFile, JSON.stringify({ status: 'failed', count, direction, error: message, positions: positions(bots) }, null, 2));
-    console.error(`FRONTIER_REAL_CLIENT_FAILED count=${count} reason=${message}`);
+    fs.writeFileSync(resultFile, JSON.stringify({ status: 'failed', count, direction, movement_mode: movementMode, error: message, positions: positions(bots) }, null, 2));
+    console.error(`FRONTIER_REAL_CLIENT_FAILED count=${count} movement=${movementMode} reason=${message}`);
     process.exitCode = 1;
   } finally {
     finishing = true;
     for (const bot of bots) {
+      try { if (typeof bot.clearControlStates === 'function') bot.clearControlStates(); } catch (_) { /* best effort */ }
       try { bot.quit('Frontier test complete'); } catch (_) { /* best effort */ }
     }
     await sleep(500);
