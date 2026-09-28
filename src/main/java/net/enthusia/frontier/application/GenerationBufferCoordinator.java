@@ -49,8 +49,6 @@ public final class GenerationBufferCoordinator {
             for (int deltaZ = -radius; deltaZ <= radius; deltaZ++) {
                 ChunkKey key = new ChunkKey(worldUuid, centerX + deltaX, centerZ + deltaZ);
                 if (!submitOrResolve(requesterId, pending, key)) {
-                    // Never retain a partially evaluated buffer. A later recovery must
-                    // revalidate the complete square instead of trusting partial state.
                     byRequester.remove(requesterId);
                     return GenerationBufferStatus.FAIL_CLOSED;
                 }
@@ -63,27 +61,39 @@ public final class GenerationBufferCoordinator {
     }
 
     /**
-     * Opportunistically submits a likely next movement square without making it the
-     * requester's blocking center. Repeating the same prediction is O(1); if queue
-     * capacity prevents a complete submission the prediction is deliberately not cached
-     * so a later movement packet can retry after capacity drains.
+     * Opportunistically submits only the newly exposed strip for an adjacent movement
+     * prediction. The current buffer must already be READY before callers use this path,
+     * so rescanning the overlapping square would add no safety and can cost hundreds of
+     * hot-path readiness checks when a player changes direction repeatedly.
      */
     public synchronized void prewarm(
             String requesterId,
             String worldUuid,
-            int centerX,
-            int centerZ,
+            int currentCenterX,
+            int currentCenterZ,
+            int nextCenterX,
+            int nextCenterZ,
             int radius) {
         validateRequest(requesterId, worldUuid, radius);
+        int stepX = nextCenterX - currentCenterX;
+        int stepZ = nextCenterZ - currentCenterZ;
+        if (Math.abs(stepX) > 1 || Math.abs(stepZ) > 1 || (stepX == 0 && stepZ == 0)) {
+            throw new IllegalArgumentException("prewarm destination must be an adjacent chunk");
+        }
 
-        BufferCenter center = new BufferCenter(worldUuid, centerX, centerZ, radius);
-        if (center.equals(prewarmByRequester.get(requesterId))) {
+        BufferCenter next = new BufferCenter(worldUuid, nextCenterX, nextCenterZ, radius);
+        if (next.equals(prewarmByRequester.get(requesterId))) {
             return;
         }
 
         for (int deltaX = -radius; deltaX <= radius; deltaX++) {
             for (int deltaZ = -radius; deltaZ <= radius; deltaZ++) {
-                ChunkKey key = new ChunkKey(worldUuid, centerX + deltaX, centerZ + deltaZ);
+                int chunkX = nextCenterX + deltaX;
+                int chunkZ = nextCenterZ + deltaZ;
+                if (insideSquare(chunkX, chunkZ, currentCenterX, currentCenterZ, radius)) {
+                    continue;
+                }
+                ChunkKey key = new ChunkKey(worldUuid, chunkX, chunkZ);
                 GenerationAdmission admission = shield.request(requesterId, key);
                 if (admission == GenerationAdmission.REJECTED_CAPACITY
                         || admission == GenerationAdmission.REJECTED_UNHEALTHY
@@ -93,7 +103,7 @@ public final class GenerationBufferCoordinator {
                 }
             }
         }
-        prewarmByRequester.put(requesterId, center);
+        prewarmByRequester.put(requesterId, next);
     }
 
     /** Charges observed generation immediately but exposes readiness only after lifecycle durability. */
@@ -104,9 +114,9 @@ public final class GenerationBufferCoordinator {
     }
 
     /**
-     * Marks an already-existing chunk as hot-ready for this process without inserting it
-     * into Frontier's cleanup ledger. Existing terrain may predate Frontier and therefore
-     * must not become cleanup-eligible merely because a client caused it to load.
+     * Marks already-existing managed terrain as hot-ready without adding it to the
+     * cleanup ledger. This prevents visible, previously generated chunks from blocking
+     * movement merely because Frontier did not create them itself.
      */
     public boolean observeLoadedExisting(ChunkKey key) {
         return readiness.observeReady(Objects.requireNonNull(key, "key"));
@@ -179,6 +189,15 @@ public final class GenerationBufferCoordinator {
         return count;
     }
 
+    public synchronized int pendingChunks(String requesterId) {
+        PendingBuffer pending = byRequester.get(Objects.requireNonNull(requesterId, "requesterId"));
+        return pending == null ? 0 : pending.missing().size();
+    }
+
+    public boolean generationPaused() {
+        return shield.limits().paused();
+    }
+
     private boolean submitOrResolve(String requesterId, PendingBuffer pending, ChunkKey key) {
         GenerationAdmission admission = shield.request(requesterId, key);
         return switch (admission) {
@@ -205,6 +224,10 @@ public final class GenerationBufferCoordinator {
         if (radius < 0 || radius > 40) {
             throw new IllegalArgumentException("buffer radius must be within 0..40 chunks");
         }
+    }
+
+    private static boolean insideSquare(int x, int z, int centerX, int centerZ, int radius) {
+        return Math.abs((long) x - centerX) <= radius && Math.abs((long) z - centerZ) <= radius;
     }
 
     private record BufferCenter(String worldUuid, int x, int z, int radius) {
