@@ -27,6 +27,7 @@ import org.bukkit.entity.Vehicle;
 import org.bukkit.event.entity.EntityTeleportEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitScheduler;
@@ -57,6 +58,44 @@ class GenerationShieldMovementListenerTest {
         when(cycleRoot.getPassengers()).thenReturn(List.of(cycleChild));
         when(cycleChild.getPassengers()).thenReturn(List.of(cycleRoot));
         assertNull(GenerationShieldMovementListener.playerPassenger(cycleRoot));
+    }
+
+    @Test
+    void healthyCrossChunkMovementIsSoftGatedAndNotCancelled() {
+        GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
+        when(buffers.canSoftAdvance()).thenReturn(true);
+        GenerationShieldMovementListener listener = listener(buffers, settings(2, 12));
+        World world = world();
+        Player player = player(4, 7, 5);
+        Location from = location(world, 0, 0);
+        Location to = location(world, 160, 0);
+        PlayerMoveEvent event = mock(PlayerMoveEvent.class);
+        when(event.getPlayer()).thenReturn(player);
+        when(event.getFrom()).thenReturn(from);
+        when(event.getTo()).thenReturn(to);
+
+        listener.onMove(event);
+
+        verify(event, never()).setCancelled(true);
+        verify(buffers, never()).prepare(any(), any(), anyInt(), anyInt(), anyInt());
+        verify(buffers).prewarm("player:" + PLAYER_ID, WORLD_ID.toString(), 10, 0, 11, 0, 9);
+    }
+
+    @Test
+    void healthyTeleportDoesNotRequireFullReadinessSquare() {
+        GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
+        when(buffers.canSoftAdvance()).thenReturn(true);
+        GenerationShieldMovementListener listener = listener(buffers, settings(2, 12));
+        World world = world();
+        Player player = player(4, 7, 5);
+        PlayerTeleportEvent event = mock(PlayerTeleportEvent.class);
+        when(event.getPlayer()).thenReturn(player);
+        when(event.getTo()).thenReturn(location(world, 1600, 1600));
+
+        listener.onTeleport(event);
+
+        verify(event, never()).setCancelled(true);
+        verify(buffers, never()).prepare(any(), any(), anyInt(), anyInt(), anyInt());
     }
 
     @Test
