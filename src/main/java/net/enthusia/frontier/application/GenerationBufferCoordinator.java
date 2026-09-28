@@ -62,9 +62,8 @@ public final class GenerationBufferCoordinator {
 
     /**
      * Opportunistically submits only the newly exposed strip for an adjacent movement
-     * prediction. The current buffer must already be READY before callers use this path,
-     * so rescanning the overlapping square would add no safety and can cost hundreds of
-     * hot-path readiness checks when a player changes direction repeatedly.
+     * prediction. This is intentionally best-effort: callers may use it while movement
+     * remains soft-gated, because readiness is still enforced by the emergency hard gate.
      */
     public synchronized void prewarm(
             String requesterId,
@@ -192,6 +191,15 @@ public final class GenerationBufferCoordinator {
     public synchronized int pendingChunks(String requesterId) {
         PendingBuffer pending = byRequester.get(Objects.requireNonNull(requesterId, "requesterId"));
         return pending == null ? 0 : pending.missing().size();
+    }
+
+    /**
+     * Healthy generation is intentionally soft-gated for live play. Paper's adaptive
+     * generation throttle remains active, while Frontier only hard-blocks movement if
+     * the global shield is paused or unhealthy.
+     */
+    public boolean canSoftAdvance() {
+        return shield.healthy() && !shield.limits().paused();
     }
 
     public boolean generationPaused() {
