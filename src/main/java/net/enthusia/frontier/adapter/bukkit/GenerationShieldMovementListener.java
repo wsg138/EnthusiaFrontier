@@ -22,6 +22,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityTeleportEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -38,6 +39,7 @@ import org.bukkit.plugin.java.JavaPlugin;
  */
 public final class GenerationShieldMovementListener implements Listener {
     private static final long MESSAGE_COOLDOWN_NANOS = 1_000_000_000L;
+    private static final double MOVEMENT_EPSILON = 1.0e-6;
 
     private final JavaPlugin plugin;
     private final GenerationBufferCoordinator buffers;
@@ -57,6 +59,11 @@ public final class GenerationShieldMovementListener implements Listener {
         this.managedWorlds = Set.copyOf(Objects.requireNonNull(managedWorlds, "managedWorlds"));
     }
 
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onJoin(PlayerJoinEvent event) {
+        prepare(event.getPlayer(), event.getPlayer().getLocation());
+    }
+
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent event) {
         if (event instanceof PlayerTeleportEvent) {
@@ -64,6 +71,10 @@ public final class GenerationShieldMovementListener implements Listener {
         }
         Location to = event.getTo();
         if (sameChunk(event.getFrom(), to)) {
+            GenerationBufferStatus current = prepare(event.getPlayer(), to);
+            if (current == GenerationBufferStatus.READY) {
+                prewarmAhead(event.getPlayer(), event.getFrom(), to);
+            }
             return;
         }
         if (!allow(event.getPlayer(), to)) {
@@ -124,33 +135,72 @@ public final class GenerationShieldMovementListener implements Listener {
     }
 
     private boolean allow(Player player, Location target) {
-        if (target == null) {
-            return false;
-        }
-        World world = target.getWorld();
-        if (world == null || !managedWorlds.contains(world.getUID())) {
-            return true;
-        }
-
-        int radius = requiredGuardRadius(player, settings.extraGuardRadiusChunks());
-        if (radius > settings.maxGuardRadiusChunks()) {
-            // A silent cap would leave a ring that Paper may still load/generate outside
-            // Frontier's proven-ready buffer. Restrict exploration instead.
-            notifyBlocked(player, GenerationBufferStatus.FAIL_CLOSED);
-            return false;
-        }
-
-        GenerationBufferStatus status = buffers.prepare(
-                requester(player),
-                world.getUID().toString(),
-                target.getBlockX() >> 4,
-                target.getBlockZ() >> 4,
-                radius);
+        GenerationBufferStatus status = prepare(player, target);
         if (status == GenerationBufferStatus.READY) {
             return true;
         }
         notifyBlocked(player, status);
         return false;
+    }
+
+    private GenerationBufferStatus prepare(Player player, Location target) {
+        if (target == null) {
+            return GenerationBufferStatus.FAIL_CLOSED;
+        }
+        World world = target.getWorld();
+        if (world == null || !managedWorlds.contains(world.getUID())) {
+            return GenerationBufferStatus.READY;
+        }
+
+        int radius = requiredGuardRadius(player, settings.extraGuardRadiusChunks());
+        if (radius > settings.maxGuardRadiusChunks()) {
+            return GenerationBufferStatus.FAIL_CLOSED;
+        }
+
+        return buffers.prepare(
+                requester(player),
+                world.getUID().toString(),
+                target.getBlockX() >> 4,
+                target.getBlockZ() >> 4,
+                radius);
+    }
+
+    private void prewarmAhead(Player player, Location from, Location to) {
+        if (from == null || to == null) {
+            return;
+        }
+        World world = to.getWorld();
+        if (world == null || !managedWorlds.contains(world.getUID())) {
+            return;
+        }
+
+        double deltaX = to.getX() - from.getX();
+        double deltaZ = to.getZ() - from.getZ();
+        double absoluteX = Math.abs(deltaX);
+        double absoluteZ = Math.abs(deltaZ);
+        if (absoluteX < MOVEMENT_EPSILON && absoluteZ < MOVEMENT_EPSILON) {
+            return;
+        }
+
+        int stepX = 0;
+        int stepZ = 0;
+        if (absoluteX >= absoluteZ) {
+            stepX = deltaX > 0.0 ? 1 : -1;
+        } else {
+            stepZ = deltaZ > 0.0 ? 1 : -1;
+        }
+
+        int radius = requiredGuardRadius(player, settings.extraGuardRadiusChunks());
+        if (radius > settings.maxGuardRadiusChunks()) {
+            return;
+        }
+
+        buffers.prewarm(
+                requester(player),
+                world.getUID().toString(),
+                (to.getBlockX() >> 4) + stepX,
+                (to.getBlockZ() >> 4) + stepZ,
+                radius);
     }
 
     static int requiredGuardRadius(Player player, int extraGuardRadiusChunks) {

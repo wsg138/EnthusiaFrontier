@@ -10,7 +10,7 @@ import java.util.concurrent.CompletionStage;
 import net.enthusia.frontier.domain.ChunkKey;
 
 /**
- * Builds a generated safety square around movement destinations without rescanning
+ * Builds generated safety squares around movement destinations without rescanning
  * the square on every movement packet. Pending centers are refreshed separately by
  * a scheduler while movement checks remain O(1).
  */
@@ -18,6 +18,7 @@ public final class GenerationBufferCoordinator {
     private final GenerationShieldService shield;
     private final GenerationReadinessPort readiness;
     private final Map<String, PendingBuffer> byRequester = new LinkedHashMap<>();
+    private final Map<String, BufferCenter> prewarmByRequester = new LinkedHashMap<>();
 
     public GenerationBufferCoordinator(
             GenerationShieldService shield,
@@ -32,14 +33,7 @@ public final class GenerationBufferCoordinator {
             int centerX,
             int centerZ,
             int radius) {
-        Objects.requireNonNull(requesterId, "requesterId");
-        Objects.requireNonNull(worldUuid, "worldUuid");
-        if (requesterId.isBlank() || worldUuid.isBlank()) {
-            throw new IllegalArgumentException("requesterId and worldUuid must not be blank");
-        }
-        if (radius < 0 || radius > 40) {
-            throw new IllegalArgumentException("buffer radius must be within 0..40 chunks");
-        }
+        validateRequest(requesterId, worldUuid, radius);
 
         BufferCenter center = new BufferCenter(worldUuid, centerX, centerZ, radius);
         PendingBuffer existing = byRequester.get(requesterId);
@@ -47,6 +41,12 @@ public final class GenerationBufferCoordinator {
             return existing.missing().isEmpty()
                     ? GenerationBufferStatus.READY
                     : GenerationBufferStatus.PENDING;
+        }
+        if (existing != null && !existing.missing().isEmpty()) {
+            // Do not abandon an in-progress square and append another full square behind it.
+            // Replacing pending state leaves the original queued chunks running anyway and
+            // can make rapid direction changes look permanently stuck behind stale work.
+            return GenerationBufferStatus.PENDING;
         }
 
         PendingBuffer pending = new PendingBuffer(center, new LinkedHashSet<>(), new LinkedHashSet<>());
@@ -63,10 +63,43 @@ public final class GenerationBufferCoordinator {
             }
         }
         if (pending.missing().isEmpty()) {
-            byRequester.remove(requesterId);
             return GenerationBufferStatus.READY;
         }
         return GenerationBufferStatus.PENDING;
+    }
+
+    /**
+     * Opportunistically submits a likely next movement square without making it the
+     * requester's blocking center. Repeating the same prediction is O(1); if queue
+     * capacity prevents a complete submission the prediction is deliberately not cached
+     * so a later movement packet can retry after capacity drains.
+     */
+    public synchronized void prewarm(
+            String requesterId,
+            String worldUuid,
+            int centerX,
+            int centerZ,
+            int radius) {
+        validateRequest(requesterId, worldUuid, radius);
+
+        BufferCenter center = new BufferCenter(worldUuid, centerX, centerZ, radius);
+        if (center.equals(prewarmByRequester.get(requesterId))) {
+            return;
+        }
+
+        for (int deltaX = -radius; deltaX <= radius; deltaX++) {
+            for (int deltaZ = -radius; deltaZ <= radius; deltaZ++) {
+                ChunkKey key = new ChunkKey(worldUuid, centerX + deltaX, centerZ + deltaZ);
+                GenerationAdmission admission = shield.request(requesterId, key);
+                if (admission == GenerationAdmission.REJECTED_CAPACITY
+                        || admission == GenerationAdmission.REJECTED_UNHEALTHY
+                        || admission == GenerationAdmission.REJECTED_STOPPED) {
+                    prewarmByRequester.remove(requesterId);
+                    return;
+                }
+            }
+        }
+        prewarmByRequester.put(requesterId, center);
     }
 
     /** Charges observed generation immediately but exposes readiness only after lifecycle durability. */
@@ -128,7 +161,9 @@ public final class GenerationBufferCoordinator {
     }
 
     public synchronized void removeRequester(String requesterId) {
-        byRequester.remove(Objects.requireNonNull(requesterId, "requesterId"));
+        String requester = Objects.requireNonNull(requesterId, "requesterId");
+        byRequester.remove(requester);
+        prewarmByRequester.remove(requester);
     }
 
     public synchronized int pendingBuffers() {
@@ -156,6 +191,17 @@ public final class GenerationBufferCoordinator {
             }
             case REJECTED_UNHEALTHY, REJECTED_STOPPED -> false;
         };
+    }
+
+    private static void validateRequest(String requesterId, String worldUuid, int radius) {
+        Objects.requireNonNull(requesterId, "requesterId");
+        Objects.requireNonNull(worldUuid, "worldUuid");
+        if (requesterId.isBlank() || worldUuid.isBlank()) {
+            throw new IllegalArgumentException("requesterId and worldUuid must not be blank");
+        }
+        if (radius < 0 || radius > 40) {
+            throw new IllegalArgumentException("buffer radius must be within 0..40 chunks");
+        }
     }
 
     private record BufferCenter(String worldUuid, int x, int z, int radius) {

@@ -62,19 +62,45 @@ class GenerationShieldMovementListenerTest {
     }
 
     @Test
-    void sameChunkMoveDoesNotTouchGenerationBuffer() {
+    void sameChunkMoveWarmsCurrentBufferWithoutCancellingMovement() {
         GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
         GenerationShieldMovementListener listener = listener(buffers, settings(2, 12));
         World world = world();
+        Player player = player(4, 7, 5);
         Location from = location(world, 1, 1);
         Location to = location(world, 15, 15);
         PlayerMoveEvent event = mock(PlayerMoveEvent.class);
+        when(event.getPlayer()).thenReturn(player);
         when(event.getFrom()).thenReturn(from);
         when(event.getTo()).thenReturn(to);
+        when(buffers.prepare("player:" + PLAYER_ID, WORLD_ID.toString(), 0, 0, 9))
+                .thenReturn(GenerationBufferStatus.PENDING);
 
         listener.onMove(event);
 
-        verifyNoInteractions(buffers);
+        verify(buffers).prepare("player:" + PLAYER_ID, WORLD_ID.toString(), 0, 0, 9);
+        verify(buffers, never()).prewarm(any(), any(), any(Integer.class), any(Integer.class), any(Integer.class));
+        verify(event, never()).setCancelled(true);
+    }
+
+    @Test
+    void readySameChunkMovePrewarmsLikelyNextChunk() {
+        GenerationBufferCoordinator buffers = mock(GenerationBufferCoordinator.class);
+        GenerationShieldMovementListener listener = listener(buffers, settings(2, 12));
+        World world = world();
+        Player player = player(4, 7, 5);
+        Location from = location(world, 1, 1);
+        Location to = location(world, 2, 1);
+        PlayerMoveEvent event = mock(PlayerMoveEvent.class);
+        when(event.getPlayer()).thenReturn(player);
+        when(event.getFrom()).thenReturn(from);
+        when(event.getTo()).thenReturn(to);
+        when(buffers.prepare("player:" + PLAYER_ID, WORLD_ID.toString(), 0, 0, 9))
+                .thenReturn(GenerationBufferStatus.READY);
+
+        listener.onMove(event);
+
+        verify(buffers).prewarm("player:" + PLAYER_ID, WORLD_ID.toString(), 1, 0, 9);
         verify(event, never()).setCancelled(true);
     }
 
@@ -227,6 +253,8 @@ class GenerationShieldMovementListenerTest {
         when(location.getWorld()).thenReturn(world);
         when(location.getBlockX()).thenReturn(blockX);
         when(location.getBlockZ()).thenReturn(blockZ);
+        when(location.getX()).thenReturn((double) blockX);
+        when(location.getZ()).thenReturn((double) blockZ);
         return location;
     }
 }
