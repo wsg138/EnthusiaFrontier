@@ -44,7 +44,7 @@ public final class GenerationBufferCoordinator {
         }
 
         if (existing != null) {
-            shield.cancelQueued(requesterId);
+            requeueReleasedForOtherPending(requesterId, shield.cancelQueued(requesterId));
         }
         PendingBuffer pending = new PendingBuffer(center, new LinkedHashSet<>(), new LinkedHashSet<>());
         byRequester.put(requesterId, pending);
@@ -65,8 +65,8 @@ public final class GenerationBufferCoordinator {
 
     /**
      * Opportunistically submits only the newly exposed strip for an adjacent movement
-     * prediction. This is intentionally best-effort: callers may use it while movement
-     * remains soft-gated, because readiness is still enforced by the emergency hard gate.
+     * prediction. This remains a hard-gate helper only; normal healthy movement relies
+     * on Paper's own loader rather than constructing proactive Frontier queues.
      */
     public synchronized void prewarm(
             String requesterId,
@@ -179,7 +179,7 @@ public final class GenerationBufferCoordinator {
         String requester = Objects.requireNonNull(requesterId, "requesterId");
         byRequester.remove(requester);
         prewarmByRequester.remove(requester);
-        shield.cancelQueued(requester);
+        requeueReleasedForOtherPending(requester, shield.cancelQueued(requester));
     }
 
     public synchronized int pendingBuffers() {
@@ -208,6 +208,23 @@ public final class GenerationBufferCoordinator {
 
     public boolean generationPaused() {
         return shield.limits().paused();
+    }
+
+    private void requeueReleasedForOtherPending(String cancelledRequester, Set<ChunkKey> released) {
+        if (released.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, PendingBuffer> entry : byRequester.entrySet()) {
+            if (entry.getKey().equals(cancelledRequester)) {
+                continue;
+            }
+            PendingBuffer pending = entry.getValue();
+            for (ChunkKey key : released) {
+                if (pending.missing().contains(key)) {
+                    pending.unsubmitted().add(key);
+                }
+            }
+        }
     }
 
     private boolean submitOrResolve(String requesterId, PendingBuffer pending, ChunkKey key) {
