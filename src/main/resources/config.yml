@@ -87,13 +87,13 @@ throttle:
 
 # Player view/send distance is allowed to grow when there is real tick-time headroom.
 # Simulation distance is deliberately NOT changed: it has much larger gameplay/ticking cost.
-# Pressure reductions happen immediately. Increases require sustained recovery and then
-# climb one band at a time, so a short quiet period cannot create a sudden chunk-load spike.
+# Pressure reductions happen within about 0.25 seconds. Increases require about 15 seconds
+# of sustained recovery and then climb one band at a time, avoiding sudden load spikes.
 adaptive-view-distance:
   enabled: true
-  sample-period-ticks: 20
+  sample-period-ticks: 5
   recovery-hysteresis-mspt: 3.0
-  recovery-stable-samples: 15
+  recovery-stable-samples: 60
   levels:
     - name: healthy
       enter-mspt: 0.0
