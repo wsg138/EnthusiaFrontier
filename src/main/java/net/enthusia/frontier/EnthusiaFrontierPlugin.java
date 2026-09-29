@@ -14,6 +14,8 @@ import java.util.logging.Level;
 import java.util.stream.Collectors;
 import net.enthusia.frontier.adapter.bukkit.BukkitCleanupCoordinator;
 import net.enthusia.frontier.adapter.bukkit.BukkitCleanupEnvironmentAdapter;
+import net.enthusia.frontier.adapter.bukkit.BukkitPerformanceEvidenceMonitor;
+import net.enthusia.frontier.adapter.bukkit.BukkitViewDistanceAdapter;
 import net.enthusia.frontier.adapter.bukkit.FrontierAcceptanceHarness;
 import net.enthusia.frontier.adapter.bukkit.FrontierGenerationLoadHarness;
 import net.enthusia.frontier.adapter.bukkit.FrontierListener;
@@ -26,6 +28,7 @@ import net.enthusia.frontier.adapter.persistence.SqliteFrontierRepository;
 import net.enthusia.frontier.adapter.persistence.SqliteGenerationReadinessAdapter;
 import net.enthusia.frontier.adapter.simulation.SimulationGenerationThrottleAdapter;
 import net.enthusia.frontier.application.AdaptiveThrottleService;
+import net.enthusia.frontier.application.AdaptiveViewDistanceService;
 import net.enthusia.frontier.application.CleanupService;
 import net.enthusia.frontier.application.FrontierStats;
 import net.enthusia.frontier.application.FrontierTrackingService;
@@ -38,14 +41,18 @@ import net.enthusia.frontier.application.MutationJournal;
 import net.enthusia.frontier.application.SafetyLatch;
 import net.enthusia.frontier.application.ServerPerformancePort;
 import net.enthusia.frontier.application.StorageReclaimPort;
+import net.enthusia.frontier.config.AdaptiveViewDistanceSettings;
 import net.enthusia.frontier.config.FrontierSettings;
 import net.enthusia.frontier.config.GenerationShieldSettings;
+import net.enthusia.frontier.config.PerformanceEvidenceSettings;
 import net.enthusia.frontier.domain.AdaptiveThrottlePolicy;
+import net.enthusia.frontier.domain.AdaptiveViewDistancePolicy;
 import net.enthusia.frontier.domain.ChunkKey;
 import net.enthusia.frontier.domain.CoreBoundaryPolicy;
 import net.enthusia.frontier.domain.GenerationShieldLevel;
 import net.enthusia.frontier.domain.GenerationShieldPolicy;
 import net.enthusia.frontier.domain.ThrottleLevel;
+import net.enthusia.frontier.domain.ViewDistanceLevel;
 import org.bukkit.Chunk;
 import org.bukkit.World;
 import org.bukkit.command.PluginCommand;
@@ -59,12 +66,18 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
 
     private FrontierSettings settings;
     private GenerationShieldSettings shieldSettings;
+    private AdaptiveViewDistanceSettings viewDistanceSettings;
+    private PerformanceEvidenceSettings evidenceSettings;
     private SqliteFrontierRepository repository;
     private SafetyLatch safetyLatch;
     private MutationJournal mutationJournal;
     private AdaptiveThrottleService throttleService;
     private GenerationThrottlePort throttlePort;
     private BukkitTask throttleTask;
+    private AdaptiveViewDistanceService viewDistanceService;
+    private BukkitViewDistanceAdapter viewDistanceAdapter;
+    private BukkitTask viewDistanceTask;
+    private BukkitPerformanceEvidenceMonitor evidenceMonitor;
     private BukkitCleanupCoordinator cleanupCoordinator;
     private FrontierAcceptanceHarness acceptanceHarness;
     private FrontierGenerationLoadHarness generationLoadHarness;
@@ -78,6 +91,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
     private String throttleAdapterMode = "uninitialized";
     private String cleanupAdapterMode = "inactive";
     private String generationShieldMode = "inactive";
+    private String viewDistanceMode = "inactive";
 
     @Override
     public void onEnable() {
@@ -85,6 +99,8 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
         try {
             settings = FrontierSettings.load(getConfig());
             shieldSettings = GenerationShieldSettings.load(getConfig());
+            viewDistanceSettings = AdaptiveViewDistanceSettings.load(getConfig());
+            evidenceSettings = PerformanceEvidenceSettings.load(getConfig());
             Path dataFolder = getDataFolder().toPath();
             repository = new SqliteFrontierRepository(dataFolder.resolve("frontier.db"));
             repository.initialize();
@@ -107,12 +123,15 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
 
             initializeThrottle();
             initializeGenerationShield(dataFolder);
+            initializeAdaptiveViewDistance();
+            initializePerformanceEvidence(dataFolder);
             getServer().getPluginManager().registerEvents(
                     new FrontierListener(tracking, generationBuffers), this);
             initializeCleanup(tracking);
             registerCommand();
             getLogger().info("EnthusiaFrontier enabled for " + settings.worldPolicies().size()
                     + " world(s); generation-shield=" + generationShieldMode
+                    + "; adaptive-view=" + viewDistanceMode
                     + "; cleanup=" + cleanupStatus() + ".");
         } catch (Exception exception) {
             getLogger().log(Level.SEVERE, "EnthusiaFrontier failed safe during startup", exception);
@@ -122,6 +141,17 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (evidenceMonitor != null) {
+            evidenceMonitor.close();
+            evidenceMonitor = null;
+        }
+        cancelTask(viewDistanceTask);
+        viewDistanceTask = null;
+        if (viewDistanceService != null) {
+            viewDistanceService.restore();
+            viewDistanceService = null;
+        }
+        viewDistanceAdapter = null;
         cancelTask(generationSampleTask);
         generationSampleTask = null;
         cancelTask(generationBufferTask);
@@ -207,6 +237,51 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 this::sampleThrottle,
                 settings.throttleSamplePeriodTicks(),
                 settings.throttleSamplePeriodTicks());
+    }
+
+    private void initializeAdaptiveViewDistance() throws Exception {
+        if (!viewDistanceSettings.enabled()) {
+            viewDistanceMode = "disabled";
+            return;
+        }
+        if (isMockBukkitRuntime()) {
+            viewDistanceMode = "simulation-unavailable";
+            return;
+        }
+
+        viewDistanceAdapter = new BukkitViewDistanceAdapter(this);
+        getServer().getPluginManager().registerEvents(viewDistanceAdapter, this);
+        AdaptiveViewDistancePolicy policy = new AdaptiveViewDistancePolicy(
+                viewDistanceSettings.levels(), viewDistanceSettings.recoveryHysteresisMspt());
+        viewDistanceService = new AdaptiveViewDistanceService(
+                policy,
+                () -> getServer().getAverageTickTime(),
+                viewDistanceAdapter,
+                viewDistanceSettings.recoveryStableSamples());
+        sampleViewDistance();
+        viewDistanceTask = getServer().getScheduler().runTaskTimer(
+                this,
+                this::sampleViewDistance,
+                viewDistanceSettings.samplePeriodTicks(),
+                viewDistanceSettings.samplePeriodTicks());
+        viewDistanceMode = "paper-player-view-send";
+    }
+
+    private void initializePerformanceEvidence(Path dataFolder) {
+        if (!evidenceSettings.enabled() || isMockBukkitRuntime()) {
+            return;
+        }
+        evidenceMonitor = new BukkitPerformanceEvidenceMonitor(
+                this,
+                evidenceSettings,
+                settings.worldPolicies().keySet(),
+                generationShield,
+                generationShieldController,
+                throttleService,
+                viewDistanceService,
+                viewDistanceAdapter,
+                dataFolder.resolve("performance-evidence.csv"));
+        evidenceMonitor.start();
     }
 
     private void initializeGenerationShield(Path dataFolder) throws Exception {
@@ -358,6 +433,21 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
         }
     }
 
+    private void sampleViewDistance() {
+        if (viewDistanceService == null) {
+            return;
+        }
+        try {
+            viewDistanceService.sample();
+        } catch (Exception exception) {
+            getLogger().log(Level.SEVERE, "Adaptive view-distance controller failed", exception);
+            cancelTask(viewDistanceTask);
+            viewDistanceTask = null;
+            viewDistanceService.restore();
+            viewDistanceMode = "failed-restored";
+        }
+    }
+
     private void sampleGenerationShield() {
         if (generationShieldController == null || generationShield == null) {
             return;
@@ -379,6 +469,16 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 }
                 return true;
             }
+            if (args.length == 1 && args[0].equalsIgnoreCase("evidence")) {
+                if (evidenceMonitor == null) {
+                    sender.sendMessage("§cFrontier performance evidence is disabled or unavailable.");
+                    return true;
+                }
+                for (String line : evidenceMonitor.evidenceLines()) {
+                    sender.sendMessage(line);
+                }
+                return true;
+            }
             if (args.length == 3 && args[0].equalsIgnoreCase("acceptance")) {
                 if (acceptanceHarness == null) {
                     sender.sendMessage("§cReal-server acceptance is unavailable on this runtime.");
@@ -393,7 +493,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 }
                 return generationLoadHarness.execute(sender, args[1], args[2]);
             }
-            sender.sendMessage("§cUsage: /frontier status");
+            sender.sendMessage("§cUsage: /frontier status | /frontier evidence");
             return true;
         });
     }
@@ -417,6 +517,14 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
         lines.add(String.format("§7MSPT: §f%.2f §7Paper per-player defense: §f%s §7adapter: §f%s",
                 mspt, throttleStatus, throttleAdapterMode));
 
+        ViewDistanceLevel viewLevel = viewDistanceService == null ? null : viewDistanceService.currentLevel();
+        String viewStatus = viewLevel == null
+                ? viewDistanceMode
+                : viewLevel.name() + " target=" + viewLevel.viewDistance()
+                        + " recovery=" + viewDistanceService.recoverySamples()
+                        + "/" + viewDistanceSettings.recoveryStableSamples();
+        lines.add("§7adaptive view: §f" + viewStatus + " §7mode: §f" + viewDistanceMode);
+
         if (generationShield != null) {
             GenerationShieldMetrics metrics = generationShield.metrics();
             GenerationShieldLevel shieldLevel = generationShieldController.currentLevel();
@@ -436,6 +544,10 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
         } else {
             lines.add("§7global shield: §f" + generationShieldMode);
         }
+
+        lines.add("§7performance evidence: §f" + (evidenceMonitor == null
+                ? (evidenceSettings.enabled() ? "unavailable" : "disabled")
+                : evidenceMonitor.statusText()));
 
         if (mutationJournal != null) {
             lines.add("§7ledger queue: §f" + mutationJournal.queueDepth()
