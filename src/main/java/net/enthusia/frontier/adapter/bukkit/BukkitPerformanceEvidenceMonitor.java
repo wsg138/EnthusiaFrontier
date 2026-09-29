@@ -12,6 +12,7 @@ import java.util.logging.Level;
 import net.enthusia.frontier.adapter.persistence.PerformanceEvidenceCsvWriter;
 import net.enthusia.frontier.application.AdaptiveThrottleService;
 import net.enthusia.frontier.application.AdaptiveViewDistanceService;
+import net.enthusia.frontier.application.GenerationShieldController;
 import net.enthusia.frontier.application.GenerationShieldMetrics;
 import net.enthusia.frontier.application.GenerationShieldService;
 import net.enthusia.frontier.application.PerformanceEvidenceWindow;
@@ -45,6 +46,7 @@ public final class BukkitPerformanceEvidenceMonitor implements AutoCloseable {
             PerformanceEvidenceSettings settings,
             Set<String> managedWorlds,
             GenerationShieldService generationShield,
+            GenerationShieldController ignoredShieldController,
             AdaptiveThrottleService throttleService,
             AdaptiveViewDistanceService viewDistanceService,
             BukkitViewDistanceAdapter viewDistanceAdapter,
