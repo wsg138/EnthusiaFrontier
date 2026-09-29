@@ -373,7 +373,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
             cleanupAdapterMode = "unsupported";
             if (settings.cleanup().enabled() && settings.cleanup().requireSupportedAdapter()) {
                 throw new IllegalStateException(
-                        "This Leaf/Paper build does not expose Frontier's validated Moonrise storage adapter",
+                        "This Paper/Leaf build does not expose Frontier's validated Moonrise storage adapter",
                         exception);
             }
             getLogger().log(Level.WARNING,
@@ -500,77 +500,87 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
 
     private List<String> statusLines() {
         List<String> lines = new ArrayList<>();
-        lines.add("§6[EnthusiaFrontier] §f" + getPluginMeta().getVersion());
-        String worlds = settings.worldPolicies().entrySet().stream()
-                .map(EnthusiaFrontierPlugin::formatWorldPolicy)
-                .collect(Collectors.joining(", "));
-        lines.add("§7managed worlds: §f" + worlds);
+        lines.add("§8§m-----------------------------------------------------");
+        lines.add("§6§lENTHUSIA FRONTIER §8• §f" + getPluginMeta().getVersion());
+        lines.add("§8§m-----------------------------------------------------");
 
-        ThrottleLevel level = throttleService == null ? null : throttleService.currentLevel();
-        String throttleStatus = throttleAdapterMode.equals("unsupported")
-                ? "unsupported"
-                : level == null
-                        ? "initializing"
-                        : level.name() + " rate=" + level.limits().maxGenerateRate()
-                                + "/s concurrent=" + level.limits().maxConcurrentGenerations();
+        ThrottleLevel throttleLevel = throttleService == null ? null : throttleService.currentLevel();
         double mspt = throttleService == null ? 0.0 : throttleService.lastMspt();
-        lines.add(String.format("§7MSPT: §f%.2f §7Paper per-player defense: §f%s §7adapter: §f%s",
-                mspt, throttleStatus, throttleAdapterMode));
-
         ViewDistanceLevel viewLevel = viewDistanceService == null ? null : viewDistanceService.currentLevel();
-        String viewStatus = viewLevel == null
-                ? viewDistanceMode
-                : viewLevel.name() + " target=" + viewLevel.viewDistance()
-                        + " recovery=" + viewDistanceService.recoverySamples()
-                        + "/" + viewDistanceSettings.recoveryStableSamples();
-        lines.add("§7adaptive view: §f" + viewStatus + " §7mode: §f" + viewDistanceMode);
+        String viewBand = viewLevel == null ? viewDistanceMode : viewLevel.name();
+        String viewTarget = viewLevel == null ? "n/a" : Integer.toString(viewLevel.viewDistance());
 
+        lines.add("§e§lPERFORMANCE");
+        lines.add(String.format("§7 MSPT §8» %s%.2f §8│ §7View §8» §b%s §8│ §7Band §8» %s%s",
+                msptColor(mspt), mspt, viewTarget, bandColor(viewBand), viewBand));
+        if (throttleLevel == null) {
+            lines.add("§7 Generation throttle §8» §7" + throttleAdapterMode);
+        } else {
+            lines.add("§7 Generation throttle §8» " + bandColor(throttleLevel.name()) + throttleLevel.name()
+                    + " §8│ §7Rate §8» §f" + formatGenerationRate(throttleLevel.limits().maxGenerateRate())
+                    + " §8│ §7Concurrent §8» §f" + throttleLevel.limits().maxConcurrentGenerations());
+        }
+
+        lines.add("");
+        lines.add("§b§lGENERATION");
         if (generationShield != null) {
             GenerationShieldMetrics metrics = generationShield.metrics();
             GenerationShieldLevel shieldLevel = generationShieldController.currentLevel();
-            String shieldLevelText = shieldLevel == null ? "initializing" : shieldLevel.name();
-            lines.add("§7global shield: §f" + shieldLevelText
-                    + " §7rate=§f" + generationShield.limits().chunksPerSecond() + "/s"
-                    + " §7concurrent=§f" + generationShield.limits().maxConcurrent()
-                    + " §7queued=§f" + metrics.queued()
-                    + " §7in-flight=§f" + metrics.inFlight()
-                    + " §7healthy=§f" + metrics.healthy());
-            lines.add("§7shield throughput: started=§f" + metrics.started()
-                    + " §7completed=§f" + metrics.completed()
-                    + " §7deduped=§f" + metrics.deduplicated()
-                    + " §7rejected=§f" + metrics.rejected()
-                    + " §7pending buffers=§f" + generationBuffers.pendingBuffers()
-                    + " §7ready cache=§f" + generationReadiness.cachedChunks());
+            String shieldBand = shieldLevel == null ? "initializing" : shieldLevel.name();
+            lines.add("§7 Shield §8» " + bandColor(shieldBand) + shieldBand
+                    + " §8│ §7Rate §8» §f" + generationShield.limits().chunksPerSecond() + "/s"
+                    + " §8│ §7Concurrent §8» §f" + generationShield.limits().maxConcurrent());
+            lines.add("§7 Queue §8» §f" + metrics.queued()
+                    + " §8│ §7In-flight §8» §f" + metrics.inFlight()
+                    + " §8│ §7Debt §8» §f" + String.format("%.0f", metrics.observedDebtChunks()));
+            lines.add("§7 Completed §8» §f" + metrics.completed()
+                    + " §8│ §7Rejected §8» " + (metrics.rejected() == 0 ? "§a" : "§c") + metrics.rejected()
+                    + " §8│ §7Pending buffers §8» §f" + generationBuffers.pendingBuffers());
         } else {
-            lines.add("§7global shield: §f" + generationShieldMode);
+            lines.add("§7 Shield §8» §7" + generationShieldMode);
         }
 
-        lines.add("§7performance evidence: §f" + (evidenceMonitor == null
+        lines.add("");
+        lines.add("§d§lDATA & SAFETY");
+        String evidenceText = evidenceMonitor == null
                 ? (evidenceSettings.enabled() ? "unavailable" : "disabled")
-                : evidenceMonitor.statusText()));
-
+                : evidenceMonitor.statusText();
+        lines.add("§7 Evidence §8» " + availabilityColor(evidenceText) + evidenceText);
         if (mutationJournal != null) {
-            lines.add("§7ledger queue: §f" + mutationJournal.queueDepth()
-                    + " §7pending: §f" + mutationJournal.pendingMutations()
-                    + " §7healthy: §f" + mutationJournal.isHealthy());
+            lines.add("§7 Ledger §8» " + healthColor(mutationJournal.isHealthy())
+                    + (mutationJournal.isHealthy() ? "healthy" : "unhealthy")
+                    + " §8│ §7Queue §8» §f" + mutationJournal.queueDepth()
+                    + " §8│ §7Pending §8» §f" + mutationJournal.pendingMutations());
         }
         if (safetyLatch != null) {
-            lines.add("§7safety latch: §f" + (safetyLatch.isTripped() ? "TRIPPED" : "clear")
-                    + (safetyLatch.isTripped() ? " §7(" + safetyLatch.reason() + ")" : ""));
+            lines.add("§7 Safety latch §8» " + (safetyLatch.isTripped() ? "§cTRIPPED" : "§aclear")
+                    + (safetyLatch.isTripped() ? " §8(§c" + safetyLatch.reason() + "§8)" : ""));
         }
         if (repository != null) {
             try {
                 FrontierStats stats = repository.stats();
-                lines.add("§7chunks: temporary=§f" + stats.temporaryChunks()
-                        + " §7protected=§f" + stats.protectedChunks()
-                        + " §7deleted=§f" + stats.deletedChunks());
+                lines.add("§7 Chunks §8» §f" + stats.temporaryChunks() + " temporary"
+                        + " §8│ §f" + stats.protectedChunks() + " protected"
+                        + " §8│ §f" + stats.deletedChunks() + " deleted");
             } catch (SQLException exception) {
-                lines.add("§7chunks: §cledger stats unavailable");
+                lines.add("§7 Chunks §8» §cledger stats unavailable");
             }
         }
-        lines.add("§7cleanup: §f" + cleanupStatus() + " §7storage adapter: §f" + cleanupAdapterMode);
-        lines.add("§7cleanup policy: retention=§f" + settings.cleanup().untouchedRetentionDays()
-                + "d §7audit=§f" + (settings.cleanup().auditLog() ? "on" : "off"));
+
+        lines.add("");
+        lines.add("§3§lCLEANUP");
+        lines.add("§7 State §8» §f" + cleanupStatus()
+                + " §8│ §7Retention §8» §f" + settings.cleanup().untouchedRetentionDays() + "d"
+                + " §8│ §7Audit §8» " + (settings.cleanup().auditLog() ? "§aon" : "§7off"));
+        lines.add("§7 Storage §8» §f" + cleanupAdapterMode);
+
+        String worlds = settings.worldPolicies().entrySet().stream()
+                .map(EnthusiaFrontierPlugin::formatWorldPolicy)
+                .collect(Collectors.joining(", "));
+        lines.add("");
+        lines.add("§8Worlds: §7" + worlds);
+        lines.add("§8Use §f/frontier evidence §8for the detailed performance breakdown.");
+        lines.add("§8§m-----------------------------------------------------");
         return List.copyOf(lines);
     }
 
@@ -601,5 +611,58 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
 
     private static String formatWorldPolicy(Map.Entry<String, CoreBoundaryPolicy> entry) {
         return entry.getKey() + "=" + entry.getValue().radiusBlocks();
+    }
+
+    private static String msptColor(double mspt) {
+        if (mspt >= 45.0) {
+            return "§c";
+        }
+        if (mspt >= 35.0) {
+            return "§6";
+        }
+        if (mspt >= 25.0) {
+            return "§e";
+        }
+        return "§a";
+    }
+
+    private static String bandColor(String band) {
+        if (band == null) {
+            return "§7";
+        }
+        if (band.equalsIgnoreCase("healthy")) {
+            return "§a";
+        }
+        if (band.equalsIgnoreCase("elevated")) {
+            return "§e";
+        }
+        if (band.equalsIgnoreCase("pressured")) {
+            return "§6";
+        }
+        if (band.equalsIgnoreCase("critical") || band.equalsIgnoreCase("emergency")) {
+            return "§c";
+        }
+        return "§7";
+    }
+
+    private static String healthColor(boolean healthy) {
+        return healthy ? "§a" : "§c";
+    }
+
+    private static String availabilityColor(String text) {
+        if (text.equalsIgnoreCase("disabled")) {
+            return "§7";
+        }
+        if (text.equalsIgnoreCase("unavailable")) {
+            return "§c";
+        }
+        if (text.equalsIgnoreCase("collecting")) {
+            return "§e";
+        }
+        return "§a";
+    }
+
+    private static String formatGenerationRate(double rate) {
+        return rate < 0.0 ? "unlimited" : rate + "/s";
     }
 }
