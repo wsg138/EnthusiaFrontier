@@ -92,30 +92,47 @@ public final class BukkitPerformanceEvidenceMonitor implements AutoCloseable {
     public List<String> evidenceLines() {
         PerformanceEvidenceWindow.Summary summary = window.summary();
         List<String> lines = new ArrayList<>();
-        lines.add("§6[Frontier evidence] §7samples=§f" + summary.samples()
-                + " §7generation-active=§f" + summary.generationActiveSamples());
+        lines.add("§8§m-----------------------------------------------------");
+        lines.add("§6§lFRONTIER PERFORMANCE EVIDENCE");
+        lines.add("§8§m-----------------------------------------------------");
         if (summary.samples() == 0) {
-            lines.add("§7No evidence samples collected yet.");
+            lines.add("§7No performance samples have been collected yet.");
+            lines.add("§8Samples are collected automatically while the server is running.");
+            lines.add("§8§m-----------------------------------------------------");
             return List.copyOf(lines);
         }
-        lines.add("§7MSPT avg=§f" + format(summary.averageMspt())
-                + " §7idle=§f" + format(summary.idleAverageMspt())
-                + " §7generating=§f" + format(summary.generationActiveAverageMspt())
-                + " §7correlated generation delta=§f" + formatSigned(summary.correlatedGenerationDeltaMspt()));
-        lines.add("§7TPS(1m) avg=§f" + format(summary.averageTpsOneMinute())
-                + " §7generated=§f" + format(summary.averageGeneratedChunksPerSecond()) + "/s"
-                + " §7view avg/max=§f" + format(summary.averageViewDistance()) + "/" + summary.maxViewDistance()
-                + " §7loaded chunks avg=§f" + format(summary.averageLoadedChunks()));
+
+        lines.add("§e§lOVERVIEW");
+        lines.add("§7 Samples §8» §f" + summary.samples()
+                + " §8│ §7Generation-active §8» §f" + summary.generationActiveSamples());
+        lines.add("§7 Avg MSPT §8» §f" + format(summary.averageMspt())
+                + " §8│ §7Avg TPS §8» §f" + format(summary.averageTpsOneMinute()));
+
+        lines.add("");
+        lines.add("§b§lGENERATION IMPACT");
+        lines.add("§7 Idle MSPT §8» §a" + format(summary.idleAverageMspt())
+                + " §8│ §7Generating §8» §e" + format(summary.generationActiveAverageMspt()));
+        lines.add("§7 Correlated delta §8» " + deltaColor(summary.correlatedGenerationDeltaMspt())
+                + formatSigned(summary.correlatedGenerationDeltaMspt()) + " ms");
+        lines.add("§7 Generation rate §8» §f" + format(summary.averageGeneratedChunksPerSecond()) + "/s"
+                + " §8│ §7Loaded chunks §8» §f" + format(summary.averageLoadedChunks()));
+
+        lines.add("");
+        lines.add("§d§lVIEW DISTANCE");
+        lines.add("§7 Average §8» §b" + format(summary.averageViewDistance())
+                + " §8│ §7Maximum §8» §b" + summary.maxViewDistance());
         for (PerformanceEvidenceWindow.ViewDistanceBucket bucket : window.viewDistanceBuckets()) {
-            lines.add("§7view §f" + bucket.viewDistance()
-                    + " §7samples=§f" + bucket.samples()
-                    + " §7MSPT=§f" + format(bucket.averageMspt())
-                    + " §7idle/gen=§f" + format(bucket.idleAverageMspt()) + "/"
-                    + format(bucket.generationActiveAverageMspt())
-                    + " §7delta=§f" + formatSigned(bucket.correlatedGenerationDeltaMspt())
-                    + " §7gen=§f" + format(bucket.averageGeneratedChunksPerSecond()) + "/s");
+            lines.add("§8 • §7View §b" + bucket.viewDistance()
+                    + " §8│ §7MSPT §f" + format(bucket.averageMspt())
+                    + " §8│ §7Gen Δ " + deltaColor(bucket.correlatedGenerationDeltaMspt())
+                    + formatSigned(bucket.correlatedGenerationDeltaMspt())
+                    + " §8│ §7Gen §f" + format(bucket.averageGeneratedChunksPerSecond()) + "/s"
+                    + " §8│ §7n=§f" + bucket.samples());
         }
-        lines.add("§8Correlation is evidence for tuning, not proof that one subsystem caused all MSPT change.");
+
+        lines.add("");
+        lines.add("§8Correlation helps tune limits; it does not prove one subsystem caused every MSPT change.");
+        lines.add("§8§m-----------------------------------------------------");
         return List.copyOf(lines);
     }
 
@@ -220,5 +237,21 @@ public final class BukkitPerformanceEvidenceMonitor implements AutoCloseable {
 
     private static String formatSigned(double value) {
         return Double.isFinite(value) ? String.format(Locale.ROOT, "%+.2f", value) : "n/a";
+    }
+
+    private static String deltaColor(double value) {
+        if (!Double.isFinite(value)) {
+            return "§7";
+        }
+        if (value >= 5.0) {
+            return "§c";
+        }
+        if (value >= 2.0) {
+            return "§6";
+        }
+        if (value > 0.5) {
+            return "§e";
+        }
+        return "§a";
     }
 }
