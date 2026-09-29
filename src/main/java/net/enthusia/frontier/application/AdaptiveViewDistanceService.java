@@ -10,8 +10,8 @@ public final class AdaptiveViewDistanceService {
     private final ServerPerformancePort performance;
     private final ViewDistancePort viewDistancePort;
     private final int recoveryStableSamples;
-    private volatile ViewDistanceLevel currentLevel;
-    private volatile double lastMspt;
+    private ViewDistanceLevel currentLevel;
+    private double lastMspt;
     private int recoverySamples;
 
     public AdaptiveViewDistanceService(
@@ -28,7 +28,7 @@ public final class AdaptiveViewDistanceService {
         this.recoveryStableSamples = recoveryStableSamples;
     }
 
-    public ViewDistanceLevel sample() throws Exception {
+    public synchronized ViewDistanceLevel sample() throws Exception {
         double mspt = performance.currentAverageMspt();
         ViewDistanceLevel selected = policy.select(mspt, currentLevel);
         if (currentLevel == null) {
@@ -53,19 +53,19 @@ public final class AdaptiveViewDistanceService {
         return currentLevel;
     }
 
-    public ViewDistanceLevel currentLevel() {
+    public synchronized ViewDistanceLevel currentLevel() {
         return currentLevel;
     }
 
-    public double lastMspt() {
+    public synchronized double lastMspt() {
         return lastMspt;
     }
 
-    public int recoverySamples() {
+    public synchronized int recoverySamples() {
         return recoverySamples;
     }
 
-    public void restore() {
+    public synchronized void restore() {
         viewDistancePort.restore();
     }
 
