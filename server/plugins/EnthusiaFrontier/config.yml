@@ -69,6 +69,35 @@ throttle:
       enter-mspt: 49.5
       max-generation-rate: 2.0
       max-concurrent-generations: 1
+
+adaptive-view-distance:
+  enabled: true
+  sample-period-ticks: 20
+  recovery-hysteresis-mspt: 3.0
+  recovery-stable-samples: 15
+  levels:
+    - name: healthy
+      enter-mspt: 0.0
+      view-distance: 15
+    - name: elevated
+      enter-mspt: 25.0
+      view-distance: 12
+    - name: pressured
+      enter-mspt: 35.0
+      view-distance: 9
+    - name: critical
+      enter-mspt: 45.0
+      view-distance: 7
+    - name: emergency
+      enter-mspt: 49.5
+      view-distance: 5
+
+performance-evidence:
+  enabled: true
+  sample-period-ticks: 100
+  retention-samples: 720
+  csv-enabled: true
+
 cleanup:
   enabled: true
   dry-run: false
