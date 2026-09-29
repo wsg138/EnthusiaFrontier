@@ -7,9 +7,9 @@ description: Adaptive world-frontier generation and lifecycle management for lar
 commands:
   frontier:
     description: EnthusiaFrontier diagnostics and administration.
-    usage: /frontier status
+    usage: /frontier status | /frontier evidence
     permission: enthusiafrontier.admin
 permissions:
   enthusiafrontier.admin:
-    description: Allows Frontier status and administrative commands.
+    description: Allows Frontier status, evidence, and administrative commands.
     default: op
