@@ -12,7 +12,6 @@ import java.util.logging.Level;
 import net.enthusia.frontier.adapter.persistence.PerformanceEvidenceCsvWriter;
 import net.enthusia.frontier.application.AdaptiveThrottleService;
 import net.enthusia.frontier.application.AdaptiveViewDistanceService;
-import net.enthusia.frontier.application.GenerationShieldController;
 import net.enthusia.frontier.application.GenerationShieldMetrics;
 import net.enthusia.frontier.application.GenerationShieldService;
 import net.enthusia.frontier.application.PerformanceEvidenceWindow;
@@ -31,7 +30,6 @@ public final class BukkitPerformanceEvidenceMonitor implements AutoCloseable {
     private final PerformanceEvidenceSettings settings;
     private final Set<String> managedWorlds;
     private final GenerationShieldService generationShield;
-    private final GenerationShieldController generationShieldController;
     private final AdaptiveThrottleService throttleService;
     private final AdaptiveViewDistanceService viewDistanceService;
     private final BukkitViewDistanceAdapter viewDistanceAdapter;
@@ -47,7 +45,6 @@ public final class BukkitPerformanceEvidenceMonitor implements AutoCloseable {
             PerformanceEvidenceSettings settings,
             Set<String> managedWorlds,
             GenerationShieldService generationShield,
-            GenerationShieldController generationShieldController,
             AdaptiveThrottleService throttleService,
             AdaptiveViewDistanceService viewDistanceService,
             BukkitViewDistanceAdapter viewDistanceAdapter,
@@ -57,7 +54,6 @@ public final class BukkitPerformanceEvidenceMonitor implements AutoCloseable {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.managedWorlds = Set.copyOf(Objects.requireNonNull(managedWorlds, "managedWorlds"));
         this.generationShield = generationShield;
-        this.generationShieldController = generationShieldController;
         this.throttleService = throttleService;
         this.viewDistanceService = viewDistanceService;
         this.viewDistanceAdapter = viewDistanceAdapter;
