@@ -72,9 +72,9 @@ throttle:
 
 adaptive-view-distance:
   enabled: true
-  sample-period-ticks: 20
+  sample-period-ticks: 5
   recovery-hysteresis-mspt: 3.0
-  recovery-stable-samples: 15
+  recovery-stable-samples: 60
   levels:
     - name: healthy
       enter-mspt: 0.0
