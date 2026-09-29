@@ -34,9 +34,9 @@ public record AdaptiveViewDistanceSettings(
     public static AdaptiveViewDistanceSettings load(FileConfiguration config) {
         Objects.requireNonNull(config, "config");
         boolean enabled = config.getBoolean("adaptive-view-distance.enabled", true);
-        long samplePeriod = config.getLong("adaptive-view-distance.sample-period-ticks", 20L);
+        long samplePeriod = config.getLong("adaptive-view-distance.sample-period-ticks", 5L);
         double hysteresis = config.getDouble("adaptive-view-distance.recovery-hysteresis-mspt", 3.0);
-        int stableSamples = config.getInt("adaptive-view-distance.recovery-stable-samples", 15);
+        int stableSamples = config.getInt("adaptive-view-distance.recovery-stable-samples", 60);
 
         List<ViewDistanceLevel> levels = new ArrayList<>();
         for (Map<?, ?> entry : config.getMapList("adaptive-view-distance.levels")) {
