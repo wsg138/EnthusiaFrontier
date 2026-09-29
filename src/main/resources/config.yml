@@ -85,6 +85,44 @@ throttle:
       max-generation-rate: 2.0
       max-concurrent-generations: 1
 
+# Player view/send distance is allowed to grow when there is real tick-time headroom.
+# Simulation distance is deliberately NOT changed: it has much larger gameplay/ticking cost.
+# Pressure reductions happen immediately. Increases require sustained recovery and then
+# climb one band at a time, so a short quiet period cannot create a sudden chunk-load spike.
+adaptive-view-distance:
+  enabled: true
+  sample-period-ticks: 20
+  recovery-hysteresis-mspt: 3.0
+  recovery-stable-samples: 15
+  levels:
+    - name: healthy
+      enter-mspt: 0.0
+      view-distance: 15
+    - name: elevated
+      enter-mspt: 25.0
+      view-distance: 12
+    - name: pressured
+      enter-mspt: 35.0
+      view-distance: 9
+    - name: critical
+      enter-mspt: 45.0
+      view-distance: 7
+    - name: emergency
+      enter-mspt: 49.5
+      view-distance: 5
+
+# Evidence used to tune the thresholds above from the real SMP. Every sample records
+# MSPT/TPS, online players, actual view/send/simulation distance, loaded chunks, observed
+# new chunk generation rate and Frontier queue/debt. /frontier evidence correlates MSPT
+# for generation-active vs idle periods and groups it by the applied view distance.
+performance-evidence:
+  enabled: true
+  sample-period-ticks: 100
+  # 720 samples at 5 seconds each keeps about one hour for /frontier evidence.
+  retention-samples: 720
+  # Long-term samples append asynchronously to plugins/EnthusiaFrontier/performance-evidence.csv.
+  csv-enabled: true
+
 cleanup:
   # Cleanup is implemented but intentionally opt-in. Enable dry-run first on a
   # production copy and inspect /frontier status before enabling destructive mode.
