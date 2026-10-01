@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -31,27 +33,23 @@ jobs:
         with:
           gradle-version: '9.2.1'
 
-      - name: Build exact-head plugin
+      - name: Build exact-head plugin against Paper 26.2 build 129 API
         run: gradle clean check shadowJar --no-daemon
 
-      - name: Resolve Paper 26.3 runtime
+      - name: Resolve exact Paper 26.2 build 129 runtime
         shell: bash
         run: |
           set -euo pipefail
           user_agent='EnthusiaFrontier acceptance (github.com/wsg138/EnthusiaFrontier)'
           curl --fail --silent --show-error --location --retry 3 \
             -H "User-Agent: ${user_agent}" \
-            'https://fill.papermc.io/v3/projects/paper/versions/26.3/builds' \
+            'https://fill.papermc.io/v3/projects/paper/versions/26.2/builds' \
             -o paper-builds.json
-          paper_url=''
-          paper_channel=''
-          for channel in STABLE BETA ALPHA; do
-            candidate="$(jq -r --arg channel "$channel" '[.[] | select(.channel == $channel)] | sort_by(.id // .number) | last | .downloads."server:default".url // empty' paper-builds.json)"
-            if [[ -n "$candidate" ]]; then paper_url="$candidate"; paper_channel="$channel"; break; fi
-          done
+          paper_url="$(jq -r '[.[] | select((.id // .number) == 129 and .channel == "STABLE")] | first | .downloads."server:default".url // empty' paper-builds.json)"
           test -n "$paper_url"
           printf '%s\n' "$paper_url" | tee paper-runtime-url.txt
-          printf '%s\n' "$paper_channel" | tee paper-runtime-channel.txt
+          printf '%s\n' 'STABLE' | tee paper-runtime-channel.txt
+          printf '%s\n' '26.2.build.129' | tee paper-runtime-build.txt
           curl --fail --silent --show-error --location --retry 3 \
             -H "User-Agent: ${user_agent}" \
             "$paper_url" -o paper.jar
@@ -68,7 +66,7 @@ jobs:
           sha256sum "${jars[0]}" | tee frontier.jar.sha256
           echo "jar=${jars[0]}" >> "$GITHUB_OUTPUT"
 
-      - name: Run destructive restart acceptance on real Paper 26.3
+      - name: Run destructive restart acceptance on exact Paper 26.2 build 129
         run: >-
           python3 tools/run_paper_reclaim_acceptance.py
           --server-dir build/paper-acceptance
@@ -79,12 +77,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: paper-26-3-reclaim-acceptance-${{ github.event.pull_request.head.sha || github.sha }}
+          name: paper-26-2-build-129-reclaim-acceptance-${{ github.event.pull_request.head.sha || github.sha }}
           if-no-files-found: warn
           retention-days: 14
           path: |
             paper-runtime-url.txt
             paper-runtime-channel.txt
+            paper-runtime-build.txt
             paper.jar.sha256
             frontier.jar.sha256
             build/paper-acceptance/logs/

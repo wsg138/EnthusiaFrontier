@@ -19,14 +19,13 @@ val paperApiVersionValue = providers.gradleProperty("paperApiVersion").get()
 val javaVersionValue = providers.gradleProperty("javaVersion").get()
 version = releaseVersionValue
 
-// These are source-controlled compatibility invariants. Validate them while the
-// build model is created so the check is configuration-cache safe and cannot be
-// bypassed by skipping a particular verification task.
-check(minecraftVersionValue == "26.3") {
-    "Minecraft baseline changed without an intentional platform migration."
+// Keep the production compatibility floor explicit. Frontier is currently
+// stabilized against the SMP's exact Paper 26.2 build 129 / Java 25 runtime.
+check(minecraftVersionValue == "26.2") {
+    "Minecraft compatibility floor changed without an intentional platform migration."
 }
-check(paperApiVersionValue == "26.3.build.+") {
-    "Paper API baseline changed without an intentional platform migration."
+check(paperApiVersionValue == "26.2.build.129-stable") {
+    "Paper API compatibility floor changed without an intentional platform migration."
 }
 check(javaVersionValue == "25") {
     "Java baseline changed without an intentional platform migration."
