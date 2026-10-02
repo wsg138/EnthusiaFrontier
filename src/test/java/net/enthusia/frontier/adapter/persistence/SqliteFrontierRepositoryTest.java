@@ -7,6 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.time.Instant;
 import java.util.List;
 import net.enthusia.frontier.application.CleanupCandidate;
@@ -108,6 +112,32 @@ class SqliteFrontierRepositoryTest {
     }
 
     @Test
+    void pendingReclaimIntentSurvivesGenerationAndProtectionMutations() throws Exception {
+        Path database = temporaryDirectory.resolve("pending-intent.db");
+        ChunkKey candidateKey = new ChunkKey("world", 40, -41);
+        Instant generated = Instant.parse("2026-01-01T00:00:00Z");
+        Instant reserved = generated.plusSeconds(120);
+
+        try (SqliteFrontierRepository repository = new SqliteFrontierRepository(database)) {
+            repository.initialize();
+            repository.applyBatch(List.of(new FrontierMutation.Generated(candidateKey, generated)));
+            repository.reserveCleanupCandidates("world", generated.plusSeconds(60), 10, reserved);
+
+            repository.applyBatch(List.of(
+                    new FrontierMutation.Generated(candidateKey, reserved.plusSeconds(1))));
+            CleanupCandidate recovered = repository.reserveCleanupCandidates(
+                    "world", reserved.plusSeconds(60), 10, reserved.plusSeconds(2)).getFirst();
+            assertEquals(reserved, recovered.reclaimIntentAt());
+
+            repository.applyBatch(List.of(new FrontierMutation.Protected(
+                    candidateKey, reserved.plusSeconds(3), ActivityKind.BLOCK_PLACE)));
+            assertTrue(repository.isProtected(candidateKey));
+        }
+
+        assertEquals(reserved.toEpochMilli(), reclaimIntentMillis(database, candidateKey));
+    }
+
+    @Test
     void specificReservationIsAtomicExactAndRejectsProtectedOrMissingChunks() throws Exception {
         Path database = temporaryDirectory.resolve("specific.db");
         Instant generated = Instant.parse("2026-01-01T00:00:00Z");
@@ -141,6 +171,23 @@ class SqliteFrontierRepositoryTest {
                     Exception.class,
                     () -> repository.reserveSpecificCleanupCandidates(
                             List.of(new ChunkKey("world", 999, 999)), reserved));
+        }
+    }
+
+    private static long reclaimIntentMillis(Path database, ChunkKey key) throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT reclaim_intent_at_ms FROM frontier_chunk "
+                             + "WHERE world_uuid = ? AND chunk_x = ? AND chunk_z = ?")) {
+            statement.setString(1, key.worldUuid());
+            statement.setInt(2, key.x());
+            statement.setInt(3, key.z());
+            try (ResultSet row = statement.executeQuery()) {
+                assertTrue(row.next());
+                long intent = row.getLong(1);
+                assertFalse(row.wasNull());
+                return intent;
+            }
         }
     }
 

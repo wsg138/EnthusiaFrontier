@@ -89,10 +89,17 @@ public final class CleanupService {
             return CleanupResult.LATCHED;
         }
 
-        storage.clearChunk(worldName, key);
-        // Storage no longer contains the chunk. Invalidate the hot readiness view
-        // immediately so same-process re-entry can never treat reclaimed terrain as ready.
+        // A three-store clear is not transactional at the filesystem layer. Invalidate
+        // generated readiness before the first mutation so even a partial failure can
+        // never be treated as ready terrain in this process.
         deletedChunkSink.accept(key);
+        try {
+            storage.clearChunk(worldName, key);
+        } catch (Exception exception) {
+            safetyLatch.trip("logical cleanup interrupted after durable reclaim intent for " + key);
+            auditDecision(worldName, candidate, "latched", "logical_storage_clear_failed");
+            throw exception;
+        }
         if (!journal.submit(new FrontierMutation.Deleted(key, Instant.now(clock)))) {
             auditDecision(worldName, candidate, "latched", "deleted_marker_submit_failed");
             return CleanupResult.LATCHED;

@@ -1,6 +1,7 @@
 package net.enthusia.frontier.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Clock;
@@ -44,12 +45,32 @@ class CleanupServiceTest {
             assertEquals(CleanupResult.CLEARED, fixture.service.process("world", candidate));
             assertTrue(await(fixture.journal::isIdle));
             assertEquals(1, fixture.storage.clears);
+            assertEquals(List.of(candidate.key()), fixture.forgotten);
             assertTrue(fixture.repository.applied.stream().anyMatch(FrontierMutation.Deleted.class::isInstance));
             assertTrue(fixture.audit.stream().anyMatch(line -> line.contains("outcome=cleared")));
             assertEquals(
                     RegionReclaimResult.RECLAIMED,
                     fixture.service.reclaim("world", RegionKey.fromChunk(candidate.key())));
             assertTrue(fixture.audit.stream().anyMatch(line -> line.contains("stage=region outcome=reclaimed")));
+        } finally {
+            fixture.close();
+        }
+    }
+
+    @Test
+    void partialStorageFailureInvalidatesReadinessAndLatchesIntentForRecovery() throws Exception {
+        Fixture fixture = new Fixture(settings(false), 20.0, true);
+        try {
+            CleanupCandidate candidate = fixture.candidate(true);
+            fixture.storage.clearFailure = new IllegalStateException("injected storage failure");
+
+            assertThrows(IllegalStateException.class, () -> fixture.service.process("world", candidate));
+
+            assertTrue(fixture.latch.isTripped());
+            assertEquals(List.of(candidate.key()), fixture.forgotten);
+            assertTrue(fixture.audit.stream()
+                    .anyMatch(line -> line.contains("outcome=latched reason=logical_storage_clear_failed")));
+            assertTrue(fixture.repository.applied.stream().noneMatch(FrontierMutation.Deleted.class::isInstance));
         } finally {
             fixture.close();
         }
@@ -138,6 +159,7 @@ class CleanupServiceTest {
         private final FrontierTrackingService tracking;
         private final RecordingStorage storage = new RecordingStorage();
         private final List<String> audit = new ArrayList<>();
+        private final List<ChunkKey> forgotten = new ArrayList<>();
         private final CleanupService service;
 
         private Fixture(CleanupSettings settings, double mspt, boolean safe) {
@@ -155,7 +177,8 @@ class CleanupServiceTest {
                     return safe;
                 }
             };
-            service = new CleanupService(settings, tracking, journal, latch, environment, storage, clock, audit::add);
+            service = new CleanupService(
+                    settings, tracking, journal, latch, environment, storage, clock, audit::add, forgotten::add);
         }
 
         private CleanupCandidate candidate(boolean reserved) {
@@ -218,6 +241,7 @@ class CleanupServiceTest {
 
     private static final class RecordingStorage implements StorageReclaimPort {
         private int clears;
+        private RuntimeException clearFailure;
 
         @Override
         public String adapterName() {
@@ -232,6 +256,9 @@ class CleanupServiceTest {
         @Override
         public void clearChunk(String worldName, ChunkKey key) {
             clears++;
+            if (clearFailure != null) {
+                throw clearFailure;
+            }
         }
 
         @Override

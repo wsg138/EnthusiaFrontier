@@ -151,7 +151,7 @@ Important crash cases:
 
 - crash before intent: world is untouched;
 - crash after intent but before clear: intent is recovered and re-checked after restart;
-- crash after clear but before final deleted marker: the durable intent still identifies the interrupted operation; a persistence failure trips the cleanup latch;
+- crash or partial adapter failure during the CHUNK/ENTITY/POI clear: the durable intent still identifies the interrupted operation, generated/protected mutations preserve that intent, and the cleanup safety latch prevents further destructive work until review;
 - crash after final deleted marker but before physical reclaim: region reclaim can be retried later;
 - any unknown occupancy or open storage handle prevents physical unlink.
 
