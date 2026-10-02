@@ -206,6 +206,11 @@ public final class FrontierAcceptanceHarness {
                 }
             }
             storage.flushWorld(world.getName(), world.getUID().toString());
+            List<ChunkKey> remaining = storage.occupiedChunks(world.getName(), region);
+            if (!remaining.isEmpty()) {
+                throw new IllegalStateException(
+                        "acceptance logical reclaim left CHUNK/ENTITY/POI occupancy: " + remaining.size());
+            }
             waitForIdle(sender, 0, () -> verifyPreparedState(
                     sender, world, region, occupied, candidateX, candidateZ,
                     protectedX, protectedZ, markerX, markerY, markerZ, beforeBytes));

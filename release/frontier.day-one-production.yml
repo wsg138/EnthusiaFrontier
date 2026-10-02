@@ -1,0 +1,150 @@
+# Reviewed day-one Enthusia production profile after the one-time old-world trim.
+# Preconditions: activate only with the exact validated Frontier artifact, a fresh/expected
+# Frontier ledger, a clear cleanup safety latch, and the Overworld identity/radius verified.
+# Nether and End remain outside Frontier lifecycle ownership.
+
+# Production Enthusia will normally use 100000 for the pregenerated overworld.
+# Set a world's core-radius-blocks to 0 on a disposable test world to make
+# every newly generated chunk managed by Frontier.
+worlds:
+  world:
+    enabled: true
+    core-radius-blocks: 100000
+  world_nether:
+    enabled: false
+    core-radius-blocks: 100000
+  world_the_end:
+    enabled: false
+    core-radius-blocks: 100000
+
+tracking:
+  # Activity permanently protects the touched chunk and this many neighboring chunks.
+  protection-radius-chunks: 2
+  mutation-queue-capacity: 65536
+  mutation-batch-size: 512
+
+# Whole-server emergency generation budget. During healthy live play Frontier does not
+# hard-gate player movement; Paper loads terrain normally and the adaptive per-player
+# throttle below reacts to MSPT. This queue becomes important when Frontier must build a
+# proven-ready buffer in paused/unhealthy fail-safe mode or for explicit generation work.
+generation-shield:
+  enabled: true
+  queue-capacity: 65536
+  # Moonrise's native player loader can extend beyond its API view distance. Keep the
+  # guard margin for the emergency hard-gate path; it is not a normal-play movement tax.
+  extra-guard-radius-chunks: 2
+  max-guard-radius-chunks: 36
+  refresh-checks-per-tick: 4096
+  # React quickly enough to catch generation pressure before TPS visibly collapses.
+  sample-period-ticks: 5
+  recovery-hysteresis-mspt: 3.0
+  levels:
+    - name: healthy
+      enter-mspt: 0.0
+      chunks-per-second: 256.0
+      max-concurrent: 16
+    - name: elevated
+      enter-mspt: 25.0
+      chunks-per-second: 96.0
+      max-concurrent: 8
+    - name: pressured
+      enter-mspt: 35.0
+      chunks-per-second: 32.0
+      max-concurrent: 4
+    - name: critical
+      enter-mspt: 45.0
+      chunks-per-second: 8.0
+      max-concurrent: 2
+    # Around the 20 TPS tick budget, stop new Frontier admissions and switch movement
+    # to the proven-ready emergency buffer until server load recovers.
+    - name: emergency
+      enter-mspt: 49.5
+      chunks-per-second: 0.0
+      max-concurrent: 0
+
+# Primary live-play generation control. Paper applies these per player and Frontier
+# changes them from measured MSPT. -1 means Paper's limiter is disabled while healthy.
+throttle:
+  require-supported-adapter: true
+  sample-period-ticks: 5
+  recovery-hysteresis-mspt: 3.0
+  levels:
+    - name: healthy
+      enter-mspt: 0.0
+      max-generation-rate: -1.0
+      max-concurrent-generations: -1
+    - name: elevated
+      enter-mspt: 25.0
+      max-generation-rate: 128.0
+      max-concurrent-generations: 12
+    - name: pressured
+      enter-mspt: 35.0
+      max-generation-rate: 48.0
+      max-concurrent-generations: 6
+    - name: critical
+      enter-mspt: 45.0
+      max-generation-rate: 12.0
+      max-concurrent-generations: 2
+    - name: emergency
+      enter-mspt: 49.5
+      max-generation-rate: 2.0
+      max-concurrent-generations: 1
+
+# Player view/send distance is allowed to grow when there is real tick-time headroom.
+# Simulation distance is deliberately NOT changed: it has much larger gameplay/ticking cost.
+# Pressure reductions happen within about 0.25 seconds. Increases require about 15 seconds
+# of sustained recovery and then climb one band at a time, avoiding sudden load spikes.
+adaptive-view-distance:
+  # Keep day-one view/send distance unchanged while real production evidence establishes a baseline.
+  enabled: false
+  sample-period-ticks: 5
+  recovery-hysteresis-mspt: 3.0
+  recovery-stable-samples: 60
+  levels:
+    - name: healthy
+      enter-mspt: 0.0
+      view-distance: 15
+    - name: elevated
+      enter-mspt: 25.0
+      view-distance: 12
+    - name: pressured
+      enter-mspt: 35.0
+      view-distance: 9
+    - name: critical
+      enter-mspt: 45.0
+      view-distance: 7
+    - name: emergency
+      enter-mspt: 49.5
+      view-distance: 5
+
+# Evidence used to tune the thresholds above from the real SMP. Every sample records
+# MSPT/TPS, online players, actual view/send/simulation distance, loaded chunks, observed
+# new chunk generation rate and Frontier queue/debt. /frontier evidence correlates MSPT
+# for generation-active vs idle periods and groups it by the applied view distance.
+performance-evidence:
+  enabled: true
+  sample-period-ticks: 100
+  # 720 samples at 5 seconds each keeps about one hour for /frontier evidence.
+  retention-samples: 720
+  # Long-term samples append asynchronously to plugins/EnthusiaFrontier/performance-evidence.csv.
+  csv-enabled: true
+
+cleanup:
+  # Lifecycle cleanup is active at launch only after the preconditions above pass.
+  # A fresh ledger plus 30-day retention means newly tracked terrain cannot be
+  # destructively eligible during the first 30 days after it is generated.
+  enabled: true
+  dry-run: false
+  untouched-retention-days: 30
+  scan-period-ticks: 1200
+  candidate-batch-size: 128
+  max-chunks-per-tick: 1
+  min-player-distance-chunks: 8
+  max-mspt: 35.0
+  # Detailed candidate/reclaim decisions. Leave off in normal production unless
+  # diagnosing cleanup because active exploration can produce substantial logs.
+  audit-log: false
+  physical-reclaim: true
+  # If destructive cleanup is enabled, refuse startup unless this exact Leaf/Paper
+  # build exposes the validated Moonrise storage adapter.
+  require-supported-adapter: true

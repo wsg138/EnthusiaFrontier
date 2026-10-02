@@ -98,10 +98,22 @@ public final class MoonriseStorageReclaimAdapter implements StorageReclaimPort {
     public void clearChunk(String worldName, ChunkKey key) throws Exception {
         World world = requireWorld(worldName, key.worldUuid());
         Object level = getHandle(world);
+        Exception failure = null;
         for (StorageType type : storageTypes) {
-            Object controller = getControllerFor.invoke(null, level, type.token());
-            Object writeData = startWrite.invoke(controller, new Object[]{key.x(), key.z(), null});
-            finishWrite.invoke(controller, key.x(), key.z(), writeData);
+            try {
+                Object controller = getControllerFor.invoke(null, level, type.token());
+                Object writeData = startWrite.invoke(controller, new Object[]{key.x(), key.z(), null});
+                finishWrite.invoke(controller, key.x(), key.z(), writeData);
+            } catch (Exception exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 

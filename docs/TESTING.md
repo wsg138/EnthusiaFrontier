@@ -135,8 +135,8 @@ The acceptance harness itself:
 - creates a protected marker chunk in a separate region;
 - records actual Moonrise storage occupancy;
 - durably reserves exactly those disposable chunks before destructive storage mutation;
-- logically clears CHUNK_DATA, ENTITY_DATA and POI_DATA;
-- invalidates generated readiness after logical clear;
+- logically clears CHUNK_DATA, ENTITY_DATA and POI_DATA and proves the union of all three stores is empty;
+- invalidates generated readiness before logical mutation so a partial clear cannot remain hot-ready;
 - persists deletion/protection state;
 - verifies those states after restart;
 - physically reclaims the empty MCA region container;

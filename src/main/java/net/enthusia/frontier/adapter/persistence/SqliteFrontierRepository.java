@@ -63,7 +63,9 @@ public final class SqliteFrontierRepository implements FrontierRepository, AutoC
                         + "ON CONFLICT(world_uuid, chunk_x, chunk_z) DO UPDATE SET "
                         + "generated_at_ms = CASE WHEN frontier_chunk.deleted_at_ms IS NOT NULL "
                         + "THEN excluded.generated_at_ms ELSE frontier_chunk.generated_at_ms END, "
-                        + "deleted_at_ms = NULL, reclaim_intent_at_ms = NULL");
+                        + "reclaim_intent_at_ms = CASE WHEN frontier_chunk.deleted_at_ms IS NOT NULL "
+                        + "THEN NULL ELSE frontier_chunk.reclaim_intent_at_ms END, "
+                        + "deleted_at_ms = NULL");
              PreparedStatement protectedMutation = active.prepareStatement(
                      "INSERT INTO frontier_chunk "
                              + "(world_uuid, chunk_x, chunk_z, generated_at_ms, last_activity_at_ms, "
@@ -75,7 +77,9 @@ public final class SqliteFrontierRepository implements FrontierRepository, AutoC
                              + "OR excluded.last_activity_at_ms > frontier_chunk.last_activity_at_ms "
                              + "THEN excluded.last_activity_at_ms ELSE frontier_chunk.last_activity_at_ms END, "
                              + "protected = 1, protection_reason = excluded.protection_reason, "
-                             + "deleted_at_ms = NULL, reclaim_intent_at_ms = NULL");
+                             + "reclaim_intent_at_ms = CASE WHEN frontier_chunk.deleted_at_ms IS NOT NULL "
+                             + "THEN NULL ELSE frontier_chunk.reclaim_intent_at_ms END, "
+                             + "deleted_at_ms = NULL");
              PreparedStatement deleted = active.prepareStatement(
                      "UPDATE frontier_chunk SET deleted_at_ms = ?, reclaim_intent_at_ms = NULL "
                              + "WHERE world_uuid = ? AND chunk_x = ? AND chunk_z = ? "
