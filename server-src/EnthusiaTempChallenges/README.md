@@ -5,7 +5,7 @@ Authoritative server-first challenge logic for the four-day Enthusia Frontier Te
 ## Architecture
 
 - Challenge definitions are data-driven in `config.yml`.
-- `ChallengeSignalListener` accepts event-oriented provenance only. World entry, vanilla advancements, trusted block/entity drops, non-plugin loot-table output, crafting, smithing, furnace extraction, armor completion after smithing, and credited entity final kills can produce evidence. Joining, inventory scanning, ordinary chest storage moves, player-to-player handoffs, and arbitrary restored/dropped items do not create claims.
+- `ChallengeSignalListener` accepts event-oriented provenance only. World entry, vanilla advancements, trusted block/entity drops, non-plugin loot-table output, Paper block-dispensed loot (including trial-chamber vault rewards), falling-block item drops, crafting, smithing, furnace extraction, complete Netherite-set detection after smithing, and credited entity final kills can produce evidence. Joining, inventory scanning, ordinary chest storage moves, player-to-player handoffs, and arbitrary restored/dropped items do not create claims.
 - Natural challenge-item drops receive a short-lived persistent provenance marker while they are still at their original gameplay source. The marker is consumed on the first trusted pickup/loot transfer so normal player inventory items do not remain specially tagged. Staff-created and invalid-origin items use a separate persistent rejection marker.
 - Command/plugin/spawn-egg-created mobs are marked invalid. Their drops and Dragon/Wither final blows cannot create Frontier firsts. Normal spawner, trial-spawner, raid, natural, and player-built Wither gameplay remains eligible subject to the normal player eligibility policy.
 - `OrderedChallengeProcessor` and `JdbcChallengeLedger` persist an ordered attempt journal and the unique winner in one SQLite transaction. `(event_id, challenge_id)` is the database-enforced one-winner boundary and `(event_id, challenge_id, signal_id)` is the replay boundary.
@@ -29,7 +29,7 @@ The plugin records reward projection state separately from the winner row. If ta
 ## Administrative safety
 
 - `/tempchallenge test <id> <player>` is dry-run only and cannot create a winner.
-- `/tempchallenge award-first <id> <online-player> CONFIRM <reason>` is the explicit audited staff override. It still respects locked challenges, closed events, and the unique-winner transaction.
+- `/tempchallenge award-first <id> <online-player> CONFIRM <reason>` is the explicit audited staff override. `/tempchallenge award` is an alias. Challenge IDs, online players, and `CONFIRM` are tab-completable so a missed automatic detection can be corrected without guessing IDs. The override still respects locked challenges, closed events, and the unique-winner transaction.
 - `/give`, `/advancement grant`, `/item replace entity`, creative inventory mutations, and common transformations of invalid-origin items are excluded from normal first evidence. Invalid item provenance follows drops, containers, crafting, smithing, and smelting.
 - Creative, spectator, operators by default, the configured exclusion permission, and players inside the short command-mutation guard cannot win through normal gameplay signals.
 - `/tempchallenge revoke-first <id> <expected-winner-uuid>` requires the currently recorded winner UUID. It revokes portable/presentation projections; previously granted XP is intentionally not subtracted, and its durable marker remains so the same player cannot be paid twice later.
