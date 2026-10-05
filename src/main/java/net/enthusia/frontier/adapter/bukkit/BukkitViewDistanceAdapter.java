@@ -14,11 +14,20 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
-/** Applies per-player view/send distance without changing simulation distance. */
+/**
+ * Applies only the per-player loading view distance without changing simulation
+ * or send-view distance.
+ *
+ * <p>Paper exposes loading and sending as separate controls. Changing the
+ * send-view distance also changes the radius announced to the client, which can
+ * make the client rebuild its render-distance state and visibly flash. Frontier
+ * only needs the loading view-distance ceiling for its adaptive pressure control,
+ * so the player's inherited send distance is deliberately left untouched.</p>
+ */
 public final class BukkitViewDistanceAdapter implements ViewDistancePort, Listener {
     private final JavaPlugin plugin;
     private final Server server;
-    private final Map<UUID, OriginalDistances> originals = new HashMap<>();
+    private final Map<UUID, Integer> originalViewDistances = new HashMap<>();
     private int targetViewDistance = -1;
 
     public BukkitViewDistanceAdapter(JavaPlugin plugin) {
@@ -41,13 +50,12 @@ public final class BukkitViewDistanceAdapter implements ViewDistancePort, Listen
     public void restore() {
         targetViewDistance = -1;
         for (Player player : server.getOnlinePlayers()) {
-            OriginalDistances original = originals.remove(player.getUniqueId());
-            if (original != null) {
-                player.setViewDistance(original.viewDistance());
-                player.setSendViewDistance(original.sendViewDistance());
+            Integer original = originalViewDistances.remove(player.getUniqueId());
+            if (original != null && player.getViewDistance() != original.intValue()) {
+                player.setViewDistance(original.intValue());
             }
         }
-        originals.clear();
+        originalViewDistances.clear();
     }
 
     public int targetViewDistance() {
@@ -67,21 +75,19 @@ public final class BukkitViewDistanceAdapter implements ViewDistancePort, Listen
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent event) {
-        originals.remove(event.getPlayer().getUniqueId());
+        originalViewDistances.remove(event.getPlayer().getUniqueId());
     }
 
     private void applyTo(Player player) {
         remember(player);
-        player.setViewDistance(targetViewDistance);
-        player.setSendViewDistance(targetViewDistance);
+        if (player.getViewDistance() != targetViewDistance) {
+            player.setViewDistance(targetViewDistance);
+        }
     }
 
     private void remember(Player player) {
-        originals.computeIfAbsent(
+        originalViewDistances.computeIfAbsent(
                 player.getUniqueId(),
-                ignored -> new OriginalDistances(player.getViewDistance(), player.getSendViewDistance()));
-    }
-
-    private record OriginalDistances(int viewDistance, int sendViewDistance) {
+                ignored -> Integer.valueOf(player.getViewDistance()));
     }
 }
