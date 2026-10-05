@@ -2,7 +2,7 @@ package net.enthusia.frontier.domain;
 
 import java.util.Objects;
 
-/** One MSPT band and the player loading view distance applied in that band. */
+/** One MSPT band and the effective player view/send distance used in that band. */
 public record ViewDistanceLevel(String name, double enterMspt, int viewDistance) {
     public ViewDistanceLevel {
         Objects.requireNonNull(name, "name");
