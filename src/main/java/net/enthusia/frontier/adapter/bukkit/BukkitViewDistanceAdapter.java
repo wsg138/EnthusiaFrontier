@@ -120,7 +120,6 @@ public final class BukkitViewDistanceAdapter implements ViewDistancePort, Listen
         if (reannounceClientRadius) {
             backend.resetAdvertisement(player.getUniqueId());
         }
-        remember(player);
         server.getScheduler().runTask(plugin, () -> {
             if (player.isOnline() && targetViewDistance >= 2) {
                 applyTo(player);
