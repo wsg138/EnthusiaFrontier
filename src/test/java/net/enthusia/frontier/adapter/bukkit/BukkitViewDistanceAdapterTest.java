@@ -2,6 +2,7 @@ package net.enthusia.frontier.adapter.bukkit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -95,7 +96,7 @@ class BukkitViewDistanceAdapterTest {
 
         private Fixture() {
             when(plugin.getServer()).thenReturn(server);
-            when(server.getOnlinePlayers()).thenReturn(List.of(player));
+            doReturn(List.of(player)).when(server).getOnlinePlayers();
             when(player.getUniqueId()).thenReturn(PLAYER_ID);
             adapter = new BukkitViewDistanceAdapter(plugin, backend, 15);
         }
