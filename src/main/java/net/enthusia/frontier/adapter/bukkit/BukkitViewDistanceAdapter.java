@@ -1,7 +1,8 @@
 package net.enthusia.frontier.adapter.bukkit;
 
 import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
@@ -188,7 +189,7 @@ public final class BukkitViewDistanceAdapter implements ViewDistancePort, Listen
         private final Method levelGetter;
         private final Method updateMaps;
         private final Object platformHooks;
-        private final Field lastSentChunkRadius;
+        private final VarHandle lastSentChunkRadius;
         private final Field connectionField;
         private final Constructor<?> cacheRadiusPacketConstructor;
         private final Method sendPacket;
@@ -206,7 +207,7 @@ public final class BukkitViewDistanceAdapter implements ViewDistancePort, Listen
                 Method levelGetter,
                 Method updateMaps,
                 Object platformHooks,
-                Field lastSentChunkRadius,
+                VarHandle lastSentChunkRadius,
                 Field connectionField,
                 Constructor<?> cacheRadiusPacketConstructor,
                 Method sendPacket) {
@@ -246,8 +247,9 @@ public final class BukkitViewDistanceAdapter implements ViewDistancePort, Listen
                 throw new IllegalStateException("Moonrise PlatformHooks.get() returned null");
             }
 
-            Field lastSentChunkRadius = loader.getDeclaredField("lastSentChunkRadius");
-            lastSentChunkRadius.setAccessible(true);
+            VarHandle lastSentChunkRadius = MethodHandles.privateLookupIn(
+                    loader, MethodHandles.lookup())
+                    .findVarHandle(loader, "lastSentChunkRadius", int.class);
 
             return new MoonrisePlayerDistanceBackend(
                     craftPlayer.getMethod("getHandle"),
@@ -385,12 +387,8 @@ public final class BukkitViewDistanceAdapter implements ViewDistancePort, Listen
             invoke(method, owner, arguments);
         }
 
-        private static void setInt(Field field, Object owner, int value) {
-            try {
-                field.setInt(owner, value);
-            } catch (IllegalAccessException exception) {
-                throw reflectionFailure(field.getName(), exception);
-            }
+        private static void setInt(VarHandle handle, Object owner, int value) {
+            handle.set(owner, value);
         }
 
         private static IllegalStateException reflectionFailure(
