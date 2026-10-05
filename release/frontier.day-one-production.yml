@@ -91,11 +91,14 @@ throttle:
       max-concurrent-generations: 1
 
 # Player view/send distance is allowed to grow when there is real tick-time headroom.
+# Frontier advertises the maximum configured chunk-cache radius to each client once, then
+# keeps that client cache stable while Moonrise adds/removes chunks for adaptive bands.
+# This avoids a whole-view client rebuild/flash on every adaptive distance transition.
 # Simulation distance is deliberately NOT changed: it has much larger gameplay/ticking cost.
 # Pressure reductions happen within about 0.25 seconds. Increases require about 15 seconds
 # of sustained recovery and then climb one band at a time, avoiding sudden load spikes.
 adaptive-view-distance:
-  # Keep day-one view/send distance unchanged while real production evidence establishes a baseline.
+  # Keep day-one adaptive loading-view changes disabled while production evidence establishes a baseline.
   enabled: false
   sample-period-ticks: 5
   recovery-hysteresis-mspt: 3.0
