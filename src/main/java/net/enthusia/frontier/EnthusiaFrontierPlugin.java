@@ -249,7 +249,11 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
             return;
         }
 
-        viewDistanceAdapter = new BukkitViewDistanceAdapter(this);
+        int clientCacheRadius = viewDistanceSettings.levels().stream()
+                .mapToInt(ViewDistanceLevel::viewDistance)
+                .max()
+                .orElseThrow();
+        viewDistanceAdapter = BukkitViewDistanceAdapter.create(this, clientCacheRadius);
         getServer().getPluginManager().registerEvents(viewDistanceAdapter, this);
         AdaptiveViewDistancePolicy policy = new AdaptiveViewDistancePolicy(
                 viewDistanceSettings.levels(), viewDistanceSettings.recoveryHysteresisMspt());
@@ -264,7 +268,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 this::sampleViewDistance,
                 viewDistanceSettings.samplePeriodTicks(),
                 viewDistanceSettings.samplePeriodTicks());
-        viewDistanceMode = "paper-player-view-send";
+        viewDistanceMode = "moonrise-stable-client-cache";
     }
 
     private void initializePerformanceEvidence(Path dataFolder) {
