@@ -5,13 +5,16 @@ import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.entity.EnderDragon;
+import org.bukkit.entity.FallingBlock;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Wither;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockDispenseLootEvent;
 import org.bukkit.event.block.BlockDropItemEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityDropItemEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.FurnaceExtractEvent;
@@ -41,7 +44,9 @@ import org.enthusia.tempchallenges.domain.SignalType;
 import org.enthusia.tempchallenges.persistence.ChallengeLedger;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 
 /**
  * Converts only trusted gameplay transitions into first-acquisition evidence.
@@ -116,6 +121,20 @@ public final class ChallengeSignalListener implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
+    public void dispensedLoot(BlockDispenseLootEvent event) {
+        List<ItemStack> loot = new ArrayList<>(event.getDispensedLoot());
+        boolean changed = false;
+        for (int i = 0; i < loot.size(); i++) {
+            ItemStack item = loot.get(i);
+            if (markTrustedNaturalOrigin(item)) {
+                loot.set(i, item);
+                changed = true;
+            }
+        }
+        if (changed) event.setDispensedLoot(loot);
+    }
+
+    @EventHandler(ignoreCancelled = true)
     public void blockDrops(BlockDropItemEvent event) {
         boolean sourceEligible = eligibleGameplayActor(event.getPlayer());
         event.getItems().forEach(entity -> {
@@ -127,6 +146,15 @@ public final class ChallengeSignalListener implements Listener {
                 entity.setItemStack(adminGuard.markInvalidOrigin(item));
             }
         });
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void fallingBlockDrop(EntityDropItemEvent event) {
+        if (!(event.getEntity() instanceof FallingBlock fallingBlock)) return;
+        ItemStack item = event.getItemDrop().getItemStack();
+        if (item == null || item.getType().isAir()) return;
+        if (fallingBlock.getBlockData().getMaterial() != item.getType()) return;
+        if (markTrustedNaturalOrigin(item)) event.getItemDrop().setItemStack(item);
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -211,20 +239,39 @@ public final class ChallengeSignalListener implements Listener {
     }
 
     private void checkNetheriteArmor(Player player) {
-        ItemStack helmet = player.getInventory().getHelmet();
-        ItemStack chest = player.getInventory().getChestplate();
-        ItemStack legs = player.getInventory().getLeggings();
-        ItemStack boots = player.getInventory().getBoots();
-        if (type(helmet) == Material.NETHERITE_HELMET && type(chest) == Material.NETHERITE_CHESTPLATE &&
-                type(legs) == Material.NETHERITE_LEGGINGS && type(boots) == Material.NETHERITE_BOOTS &&
-                !invalidItem(helmet) && !invalidItem(chest) && !invalidItem(legs) && !invalidItem(boots)) {
+        List<ItemStack> trustedItems = new ArrayList<>();
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (!invalidItem(item)) trustedItems.add(item);
+        }
+        ItemStack cursor = player.getItemOnCursor();
+        if (!invalidItem(cursor)) trustedItems.add(cursor);
+
+        if (hasCompleteNetheriteSet(trustedItems)) {
             emit(player, new SignalKey(SignalType.ARMOR_COMPLETE, "NETHERITE"),
                     perTick(player, "armor", Material.NETHERITE_CHESTPLATE),
-                    "full netherite set after trusted smithing");
+                    "complete netherite set after trusted smithing");
         }
     }
 
-    private Material type(ItemStack item) { return item == null ? Material.AIR : item.getType(); }
+    static boolean hasCompleteNetheriteSet(Collection<ItemStack> items) {
+        boolean helmet = false;
+        boolean chestplate = false;
+        boolean leggings = false;
+        boolean boots = false;
+        for (ItemStack item : items) {
+            Material material = type(item);
+            switch (material) {
+                case NETHERITE_HELMET -> helmet = true;
+                case NETHERITE_CHESTPLATE -> chestplate = true;
+                case NETHERITE_LEGGINGS -> leggings = true;
+                case NETHERITE_BOOTS -> boots = true;
+                default -> { }
+            }
+        }
+        return helmet && chestplate && leggings && boots;
+    }
+
+    private static Material type(ItemStack item) { return item == null ? Material.AIR : item.getType(); }
 
     private void emitItem(Player player, Material material, String signalId, String detail) {
         emit(player, new SignalKey(SignalType.ITEM_ACQUIRED, material.name()), signalId, detail);
