@@ -81,6 +81,15 @@ public final class AdaptiveViewDistancePolicy {
         return levels.get(recoveredIndex);
     }
 
+    /** MSPT must fall strictly below this value to recover from the supplied band. */
+    public double recoveryThresholdFor(ViewDistanceLevel level) {
+        int index = indexOf(level);
+        if (index <= 0) {
+            throw new IllegalArgumentException("Level does not have a recovery transition: " + level);
+        }
+        return levels.get(index).enterMspt() - recoveryHysteresisMspt;
+    }
+
     public int indexOf(ViewDistanceLevel level) {
         Objects.requireNonNull(level, "level");
         return indexByName.getOrDefault(level.name(), -1);
