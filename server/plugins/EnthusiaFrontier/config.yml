@@ -74,7 +74,12 @@ adaptive-view-distance:
   enabled: true
   sample-period-ticks: 5
   recovery-hysteresis-mspt: 3.0
-  recovery-stable-samples: 60
+  # Cautious recovery near the next MSPT boundary: 32 x 5 ticks ~= 8 seconds.
+  recovery-stable-samples: 32
+  # Strong headroom recovers a single band after 12 x 5 ticks ~= 3 seconds.
+  recovery-fast-stable-samples: 12
+  # Use fast recovery only when MSPT is this far below the next recovery threshold.
+  recovery-fast-headroom-mspt: 8.0
   levels:
     - name: healthy
       enter-mspt: 0.0
