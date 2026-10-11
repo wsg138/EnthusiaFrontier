@@ -74,6 +74,7 @@ class AdaptiveViewDistanceServiceTest {
         assertEquals(false, service.recoveryStatus().fast());
         assertEquals(4, service.recoveryStatus().requiredSamples());
         service.sample();
+        service.sample();
         assertEquals("healthy", service.sample().name());
         assertEquals(List.of(7, 9, 12, 15), port.applied);
     }
