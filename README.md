@@ -12,6 +12,17 @@ During healthy live play, Frontier does **not** cancel normal walking, Elytra/cr
 
 For production Enthusia the intended permanent overworld core is `100000` blocks in each horizontal direction. For disposable testing, `core-radius-blocks: 0` means **the entire world is managed by Frontier**.
 
+## Operator distance controls
+
+- `/frontier` or `/frontier help` lists the routine commands.
+- `/frontier status` shows overall server and generation health.
+- `/frontier distance` (also `view` or `render`) shows the active target view distance, the stable advertised client-cache radius, current MSPT, actual player-reported view/send/simulation distances, and why the next distance step is waiting. This is a read-only operator command.
+- `/frontier evidence` shows historical MSPT and generation correlations.
+
+Adaptive view/send recovery uses the same MSPT pressure thresholds and hysteresis as before. Reductions remain immediate, while increases are limited to one band per recovery step. The `adaptive-view-distance` section configures a fast recovery when MSPT is well below the next recovery threshold (`recovery-fast-stable-samples`, default 12 samples / ~3 seconds, and `recovery-fast-headroom-mspt`, default 8), or a cautious recovery closer to that threshold (`recovery-stable-samples`, default 32 samples / ~8 seconds). Each sample runs every `sample-period-ticks` (default 5). Existing deployed `config.yml` files must be updated to use the new values; the plugin does not overwrite them.
+
+Simulation distance is not dynamically changed. Keeping it stable avoids changing mob AI/redstone and other active-chunk mechanics during lag recovery. Measure the real tick cost before considering a separate simulation-distance controller.
+
 ## Cleanup safety
 
 Destructive cleanup is implemented but intentionally **disabled by default**. Production rollout is expected to progress through tracking, dry-run review, disposable real-server acceptance, and only then explicit operator enablement.
