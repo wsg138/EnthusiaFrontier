@@ -47,6 +47,65 @@ class AdaptiveViewDistanceServiceTest {
         assertEquals(1, port.restoreCount);
     }
 
+    @Test
+    void strongHeadroomRecoversQuicklyButOnlyOneBandPerStep() throws Exception {
+        double[] mspt = {46.0};
+        RecordingViewDistance port = new RecordingViewDistance();
+        AdaptiveViewDistanceService service = new AdaptiveViewDistanceService(
+                new AdaptiveViewDistancePolicy(levels(), 3.0),
+                () -> mspt[0], port, 4, 2, 8.0);
+
+        assertEquals("critical", service.sample().name());
+        mspt[0] = 20.0;
+        assertEquals("critical", service.sample().name());
+        AdaptiveViewDistanceService.RecoveryStatus status = service.recoveryStatus();
+        assertEquals(9, status.nextLevel().viewDistance());
+        assertEquals(42.0, status.belowMspt());
+        assertEquals(true, status.eligible());
+        assertEquals(true, status.fast());
+        assertEquals(1, status.stableSamples());
+        assertEquals(2, status.requiredSamples());
+
+        assertEquals("pressured", service.sample().name());
+        assertEquals("pressured", service.sample().name());
+        assertEquals("elevated", service.sample().name());
+        // At 20 MSPT, 12->15 is near the 22 MSPT recovery boundary: cautious.
+        assertEquals("elevated", service.sample().name());
+        assertEquals(false, service.recoveryStatus().fast());
+        assertEquals(4, service.recoveryStatus().requiredSamples());
+        service.sample();
+        service.sample();
+        assertEquals("healthy", service.sample().name());
+        assertEquals(List.of(7, 9, 12, 15), port.applied);
+    }
+
+    @Test
+    void cautiousRecoveryWaitsAndPressureResetsTheCounter() throws Exception {
+        double[] mspt = {46.0};
+        RecordingViewDistance port = new RecordingViewDistance();
+        AdaptiveViewDistanceService service = new AdaptiveViewDistanceService(
+                new AdaptiveViewDistancePolicy(levels(), 3.0),
+                () -> mspt[0], port, 4, 2, 8.0);
+        service.sample();
+        mspt[0] = 41.0; // Under the 42 MSPT recovery boundary, but only 1 MSPT of headroom.
+        service.sample();
+        assertEquals(false, service.recoveryStatus().fast());
+        assertEquals(4, service.recoveryStatus().requiredSamples());
+        assertEquals(1, service.recoverySamples());
+
+        mspt[0] = 43.0;
+        service.sample();
+        assertEquals(0, service.recoverySamples());
+        assertEquals(false, service.recoveryStatus().eligible());
+
+        mspt[0] = 41.0;
+        service.sample();
+        service.sample();
+        service.sample();
+        assertEquals("critical", service.currentLevel().name());
+        assertEquals("pressured", service.sample().name());
+    }
+
     private static List<ViewDistanceLevel> levels() {
         return List.of(
                 new ViewDistanceLevel("healthy", 0.0, 15),

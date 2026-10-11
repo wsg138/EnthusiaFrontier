@@ -19,7 +19,9 @@ class AdaptivePerformanceSettingsTest {
 
         assertTrue(view.enabled());
         assertEquals(5L, view.samplePeriodTicks());
-        assertEquals(60, view.recoveryStableSamples());
+        assertEquals(32, view.recoveryStableSamples());
+        assertEquals(12, view.recoveryFastStableSamples());
+        assertEquals(8.0, view.recoveryFastHeadroomMspt());
         assertEquals(List.of(15, 12, 9, 7, 5),
                 view.levels().stream().map(level -> level.viewDistance()).toList());
         assertTrue(evidence.enabled());
@@ -41,6 +43,8 @@ class AdaptivePerformanceSettingsTest {
 
         AdaptiveViewDistanceSettings loaded = AdaptiveViewDistanceSettings.load(config);
         assertEquals(2, loaded.levels().size());
+        assertEquals(8, loaded.recoveryStableSamples());
+        assertEquals(8, loaded.recoveryFastStableSamples());
         assertEquals(14, loaded.levels().get(0).viewDistance());
         assertEquals(7, loaded.levels().get(1).viewDistance());
 
@@ -50,6 +54,10 @@ class AdaptivePerformanceSettingsTest {
                 () -> new AdaptiveViewDistanceSettings(true, 5, -1.0, 1, loaded.levels()));
         assertThrows(IllegalArgumentException.class,
                 () -> new AdaptiveViewDistanceSettings(true, 5, 3.0, 0, loaded.levels()));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AdaptiveViewDistanceSettings(true, 5, 3.0, 10, 11, 8.0, loaded.levels()));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AdaptiveViewDistanceSettings(true, 5, 3.0, 10, 2, Double.NaN, loaded.levels()));
         assertThrows(IllegalArgumentException.class,
                 () -> new PerformanceEvidenceSettings(true, 19, 12, true));
         assertThrows(IllegalArgumentException.class,

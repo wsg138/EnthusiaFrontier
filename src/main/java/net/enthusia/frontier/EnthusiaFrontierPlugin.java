@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -56,6 +57,7 @@ import net.enthusia.frontier.domain.ViewDistanceLevel;
 import org.bukkit.Chunk;
 import org.bukkit.World;
 import org.bukkit.command.PluginCommand;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -261,7 +263,9 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 policy,
                 () -> getServer().getAverageTickTime(),
                 viewDistanceAdapter,
-                viewDistanceSettings.recoveryStableSamples());
+                viewDistanceSettings.recoveryStableSamples(),
+                viewDistanceSettings.recoveryFastStableSamples(),
+                viewDistanceSettings.recoveryFastHeadroomMspt());
         sampleViewDistance();
         viewDistanceTask = getServer().getScheduler().runTaskTimer(
                 this,
@@ -465,10 +469,26 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
     }
 
     private void registerCommand() {
-        PluginCommand command = Objects.requireNonNull(getCommand("frontier"), "frontier command missing from plugin.yml");
+        PluginCommand command = Objects.requireNonNull(
+                getCommand("frontier"), "frontier command missing from plugin.yml");
         command.setExecutor((sender, ignoredCommand, ignoredLabel, args) -> {
-            if (args.length == 0 || (args.length == 1 && args[0].equalsIgnoreCase("status"))) {
+            if (args.length == 0 || (args.length == 1 && args[0].equalsIgnoreCase("help"))) {
+                sender.sendMessage("§6§lENTHUSIA FRONTIER §7commands");
+                sender.sendMessage("§e/frontier status §8- §7System health and generation status");
+                sender.sendMessage("§e/frontier distance §8- §7Current render distance and recovery");
+                sender.sendMessage("§e/frontier evidence §8- §7Recent performance breakdown");
+                return true;
+            }
+            if (args.length == 1 && args[0].equalsIgnoreCase("status")) {
                 for (String line : statusLines()) {
+                    sender.sendMessage(line);
+                }
+                return true;
+            }
+            if (args.length == 1 && (args[0].equalsIgnoreCase("distance")
+                    || args[0].equalsIgnoreCase("view")
+                    || args[0].equalsIgnoreCase("render"))) {
+                for (String line : distanceLines()) {
                     sender.sendMessage(line);
                 }
                 return true;
@@ -483,6 +503,8 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 }
                 return true;
             }
+            // Existing real-runtime acceptance/load tests remain available to operators,
+            // but are deliberately kept out of the everyday command help/completion.
             if (args.length == 3 && args[0].equalsIgnoreCase("acceptance")) {
                 if (acceptanceHarness == null) {
                     sender.sendMessage("§cReal-server acceptance is unavailable on this runtime.");
@@ -497,9 +519,93 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 }
                 return generationLoadHarness.execute(sender, args[1], args[2]);
             }
-            sender.sendMessage("§cUsage: /frontier status | /frontier evidence");
+            sender.sendMessage("§cUnknown Frontier command. Use /frontier help.");
             return true;
         });
+        command.setTabCompleter((sender, ignoredCommand, ignoredLabel, args) -> {
+            if (args.length != 1) {
+                return List.of();
+            }
+            String prefix = args[0].toLowerCase(Locale.ROOT);
+            return List.of("status", "distance", "evidence", "help").stream()
+                    .filter(option -> option.startsWith(prefix))
+                    .toList();
+        });
+    }
+
+    private List<String> distanceLines() {
+        List<String> lines = new ArrayList<>();
+        lines.add("§8§m-----------------------------------------------------");
+        lines.add("§6§lFRONTIER DISTANCE");
+        lines.add("§7 Adaptive controller §8» §f" + viewDistanceMode);
+
+        if (viewDistanceService != null) {
+            ViewDistanceLevel current = viewDistanceService.currentLevel();
+            if (current != null) {
+                lines.add("§7 Target view/send §8» §b" + current.viewDistance()
+                        + " chunks §8│ §7Band §8» " + bandColor(current.name()) + current.name());
+                lines.add("§7 Current MSPT §8» " + msptColor(viewDistanceService.lastMspt())
+                        + String.format(Locale.ROOT, "%.2f", viewDistanceService.lastMspt()));
+                if (viewDistanceAdapter != null) {
+                    lines.add("§7 Advertised client cache §8» §f"
+                            + viewDistanceAdapter.clientCacheRadius() + " chunks (stable)");
+                }
+                AdaptiveViewDistanceService.RecoveryStatus recovery =
+                        viewDistanceService.recoveryStatus();
+                if (recovery == null) {
+                    lines.add("§a At maximum configured distance");
+                } else if (!recovery.eligible()) {
+                    lines.add("§e Waiting to recover to §f" + recovery.nextLevel().viewDistance()
+                            + " §7(MSPT must be below "
+                            + String.format(Locale.ROOT, "%.2f", recovery.belowMspt()) + ")");
+                } else {
+                    lines.add("§a Recovering to §f" + recovery.nextLevel().viewDistance()
+                            + " §8» §f" + recovery.stableSamples() + "/"
+                            + recovery.requiredSamples() + " stable samples §8("
+                            + (recovery.fast() ? "fast" : "cautious") + ")");
+                }
+            } else {
+                lines.add("§7 Controller is initializing.");
+            }
+        } else {
+            lines.add("§7 Adaptive control is not active; server settings apply.");
+        }
+
+        int count = 0;
+        int minView = Integer.MAX_VALUE;
+        int maxView = Integer.MIN_VALUE;
+        int minSend = Integer.MAX_VALUE;
+        int maxSend = Integer.MIN_VALUE;
+        int minSimulation = Integer.MAX_VALUE;
+        int maxSimulation = Integer.MIN_VALUE;
+        for (Player player : getServer().getOnlinePlayers()) {
+            count++;
+            int view = player.getViewDistance();
+            int send = player.getSendViewDistance();
+            int simulation = player.getSimulationDistance();
+            minView = Math.min(minView, view);
+            maxView = Math.max(maxView, view);
+            minSend = Math.min(minSend, send);
+            maxSend = Math.max(maxSend, send);
+            minSimulation = Math.min(minSimulation, simulation);
+            maxSimulation = Math.max(maxSimulation, simulation);
+        }
+        if (count == 0) {
+            lines.add("§7 No players online to sample effective distances.");
+        } else {
+            lines.add("§7 Players sampled §8» §f" + count);
+            lines.add("§7 Player-reported view §8» §b" + distanceRange(minView, maxView)
+                    + " §8│ §7Send §8» §b" + distanceRange(minSend, maxSend));
+            lines.add("§7 Simulation §8» §b" + distanceRange(minSimulation, maxSimulation)
+                    + " §8(fixed by server, not adapted)");
+            lines.add("§8 Player-reported values can differ from Frontier's Moonrise target.");
+        }
+        lines.add("§8§m-----------------------------------------------------");
+        return List.copyOf(lines);
+    }
+
+    private static String distanceRange(int min, int max) {
+        return min == max ? Integer.toString(min) : min + "-" + max;
     }
 
     private List<String> statusLines() {
@@ -583,7 +689,7 @@ public final class EnthusiaFrontierPlugin extends JavaPlugin {
                 .collect(Collectors.joining(", "));
         lines.add("");
         lines.add("§8Worlds: §7" + worlds);
-        lines.add("§8Use §f/frontier evidence §8for the detailed performance breakdown.");
+        lines.add("§8Use §f/frontier distance §8for view/recovery; §f/frontier evidence §8for history.");
         lines.add("§8§m-----------------------------------------------------");
         return List.copyOf(lines);
     }

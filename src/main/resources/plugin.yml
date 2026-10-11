@@ -7,7 +7,7 @@ description: Adaptive world-frontier generation and lifecycle management for lar
 commands:
   frontier:
     description: EnthusiaFrontier diagnostics and administration.
-    usage: /frontier status | /frontier evidence
+    usage: /frontier help | /frontier status | /frontier distance | /frontier evidence
     permission: enthusiafrontier.admin
 permissions:
   enthusiafrontier.admin:

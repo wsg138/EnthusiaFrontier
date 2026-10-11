@@ -95,14 +95,19 @@ throttle:
 # keeps that client cache stable while Moonrise adds/removes chunks for adaptive bands.
 # This avoids a whole-view client rebuild/flash on every adaptive distance transition.
 # Simulation distance is deliberately NOT changed: it has much larger gameplay/ticking cost.
-# Pressure reductions happen within about 0.25 seconds. Increases require about 15 seconds
-# of sustained recovery and then climb one band at a time, avoiding sudden load spikes.
+# Pressure reductions happen within about 0.25 seconds. Recovery remains one band
+# at a time, using 3 seconds with strong headroom or 8 seconds near the limit.
 adaptive-view-distance:
   # Keep day-one adaptive loading-view changes disabled while production evidence establishes a baseline.
   enabled: false
   sample-period-ticks: 5
   recovery-hysteresis-mspt: 3.0
-  recovery-stable-samples: 60
+  # Cautious recovery near the next MSPT boundary: 32 x 5 ticks ~= 8 seconds.
+  recovery-stable-samples: 32
+  # Strong headroom recovers a single band after 12 x 5 ticks ~= 3 seconds.
+  recovery-fast-stable-samples: 12
+  # Use fast recovery only when MSPT is this far below the next recovery threshold.
+  recovery-fast-headroom-mspt: 8.0
   levels:
     - name: healthy
       enter-mspt: 0.0
