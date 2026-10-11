@@ -15,10 +15,10 @@ CLIENT_RETRY_INTERVAL_SECONDS=5
 
 rm -rf "$SMOKE"
 mkdir -p "$SERVER/plugins/EnthusiaFrontier"
-cp "$PLUGIN_JAR" "$SERVER/plugins/EnthusiaFrontier-0.1.1.jar"
+cp "$PLUGIN_JAR" "$SERVER/plugins/EnthusiaFrontier-0.1.2.jar"
 cp "$PAPER_JAR" "$SERVER/paper.jar"
 cp "$ROOT/src/main/resources/config.yml" "$SERVER/plugins/EnthusiaFrontier/config.yml"
-sha256sum "$SERVER/plugins/EnthusiaFrontier-0.1.1.jar" > "$SMOKE/plugin.sha256"
+sha256sum "$SERVER/plugins/EnthusiaFrontier-0.1.2.jar" > "$SMOKE/plugin.sha256"
 sha256sum "$SERVER/paper.jar" > "$SMOKE/paper.sha256"
 
 python3 - "$SERVER/plugins/EnthusiaFrontier/config.yml" <<'PY'
