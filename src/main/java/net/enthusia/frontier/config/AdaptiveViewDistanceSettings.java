@@ -13,7 +13,17 @@ public record AdaptiveViewDistanceSettings(
         long samplePeriodTicks,
         double recoveryHysteresisMspt,
         int recoveryStableSamples,
+        int recoveryFastStableSamples,
+        double recoveryFastHeadroomMspt,
         List<ViewDistanceLevel> levels) {
+
+    /** Compatibility constructor for tests and older callers. */
+    public AdaptiveViewDistanceSettings(
+            boolean enabled, long samplePeriodTicks, double recoveryHysteresisMspt,
+            int recoveryStableSamples, List<ViewDistanceLevel> levels) {
+        this(enabled, samplePeriodTicks, recoveryHysteresisMspt,
+                recoveryStableSamples, Math.min(12, recoveryStableSamples), 8.0, levels);
+    }
 
     public AdaptiveViewDistanceSettings {
         levels = List.copyOf(Objects.requireNonNull(levels, "levels"));
@@ -26,6 +36,14 @@ public record AdaptiveViewDistanceSettings(
         if (recoveryStableSamples < 1) {
             throw new IllegalArgumentException("adaptive-view-distance.recovery-stable-samples must be >= 1");
         }
+        if (recoveryFastStableSamples < 1 || recoveryFastStableSamples > recoveryStableSamples) {
+            throw new IllegalArgumentException(
+                    "adaptive-view-distance.recovery-fast-stable-samples must be within 1..recovery-stable-samples");
+        }
+        if (!Double.isFinite(recoveryFastHeadroomMspt) || recoveryFastHeadroomMspt < 0.0) {
+            throw new IllegalArgumentException(
+                    "adaptive-view-distance.recovery-fast-headroom-mspt must be non-negative and finite");
+        }
         if (levels.isEmpty()) {
             throw new IllegalArgumentException("adaptive-view-distance.levels must contain at least one level");
         }
@@ -36,7 +54,9 @@ public record AdaptiveViewDistanceSettings(
         boolean enabled = config.getBoolean("adaptive-view-distance.enabled", true);
         long samplePeriod = config.getLong("adaptive-view-distance.sample-period-ticks", 5L);
         double hysteresis = config.getDouble("adaptive-view-distance.recovery-hysteresis-mspt", 3.0);
-        int stableSamples = config.getInt("adaptive-view-distance.recovery-stable-samples", 60);
+        int stableSamples = config.getInt("adaptive-view-distance.recovery-stable-samples", 32);
+        int fastSamples = config.getInt("adaptive-view-distance.recovery-fast-stable-samples", 12);
+        double fastHeadroom = config.getDouble("adaptive-view-distance.recovery-fast-headroom-mspt", 8.0);
 
         List<ViewDistanceLevel> levels = new ArrayList<>();
         for (Map<?, ?> entry : config.getMapList("adaptive-view-distance.levels")) {
@@ -48,7 +68,8 @@ public record AdaptiveViewDistanceSettings(
         if (levels.isEmpty()) {
             levels = defaultLevels();
         }
-        return new AdaptiveViewDistanceSettings(enabled, samplePeriod, hysteresis, stableSamples, levels);
+        return new AdaptiveViewDistanceSettings(
+                enabled, samplePeriod, hysteresis, stableSamples, fastSamples, fastHeadroom, levels);
     }
 
     private static List<ViewDistanceLevel> defaultLevels() {
