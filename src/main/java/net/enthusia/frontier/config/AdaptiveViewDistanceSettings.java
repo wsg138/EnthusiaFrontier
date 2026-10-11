@@ -55,7 +55,8 @@ public record AdaptiveViewDistanceSettings(
         long samplePeriod = config.getLong("adaptive-view-distance.sample-period-ticks", 5L);
         double hysteresis = config.getDouble("adaptive-view-distance.recovery-hysteresis-mspt", 3.0);
         int stableSamples = config.getInt("adaptive-view-distance.recovery-stable-samples", 32);
-        int fastSamples = config.getInt("adaptive-view-distance.recovery-fast-stable-samples", 12);
+        int fastSamples = config.getInt("adaptive-view-distance.recovery-fast-stable-samples",
+                Math.min(12, stableSamples));
         double fastHeadroom = config.getDouble("adaptive-view-distance.recovery-fast-headroom-mspt", 8.0);
 
         List<ViewDistanceLevel> levels = new ArrayList<>();
