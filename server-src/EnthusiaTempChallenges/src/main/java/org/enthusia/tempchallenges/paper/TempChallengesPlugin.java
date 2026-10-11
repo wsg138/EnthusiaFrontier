@@ -22,7 +22,9 @@ import org.enthusia.tempchallenges.persistence.JdbcChallengeLedger;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -81,7 +83,9 @@ public final class TempChallengesPlugin extends JavaPlugin {
                 status(sender);
                 return true;
             });
-            Objects.requireNonNull(getCommand("tempchallenge")).setExecutor(this::adminCommand);
+            var tempChallengeCommand = Objects.requireNonNull(getCommand("tempchallenge"));
+            tempChallengeCommand.setExecutor(this::adminCommand);
+            tempChallengeCommand.setTabCompleter(this::adminTabComplete);
             getLogger().info("EnthusiaTempChallenges enabled: event=" + eventId + ", state=" + eventState +
                     ", challenges=" + registry.all().size() + ", Java 21 / Paper 1.21.11 target.");
         } catch (Exception exception) {
@@ -116,7 +120,7 @@ public final class TempChallengesPlugin extends JavaPlugin {
                 case "verify" -> verify(sender, args);
                 case "reconcile" -> reconcile(sender, args);
                 case "revoke-first" -> revoke(sender, args);
-                case "award-first" -> awardFirst(sender, args);
+                case "award", "award-first" -> awardFirst(sender, args);
                 case "test" -> dryRun(sender, args);
                 default -> usage(sender);
             }
@@ -127,8 +131,48 @@ public final class TempChallengesPlugin extends JavaPlugin {
         return true;
     }
 
+    private List<String> adminTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (args.length == 1) {
+            List<String> commands = new ArrayList<>();
+            commands.add("status");
+            if (sender.hasPermission("enthusia.tempchallenges.admin")) {
+                commands.addAll(List.of("verify", "export", "reconcile", "revoke-first", "award-first", "award", "test"));
+            }
+            return matching(args[0], commands);
+        }
+        if (!sender.hasPermission("enthusia.tempchallenges.admin")) return List.of();
+
+        String subcommand = args[0].toLowerCase(Locale.ROOT);
+        if (args.length == 2) {
+            if (subcommand.equals("verify") || subcommand.equals("revoke-first") ||
+                    subcommand.equals("award-first") || subcommand.equals("award") || subcommand.equals("test")) {
+                List<String> ids = registry.all().stream().map(ChallengeDefinition::id).sorted().toList();
+                return matching(args[1], ids);
+            }
+            if (subcommand.equals("reconcile")) return matching(args[1], onlinePlayerNames());
+        }
+        if (args.length == 3 && (subcommand.equals("verify") || subcommand.equals("award-first") ||
+                subcommand.equals("award") || subcommand.equals("test"))) {
+            return matching(args[2], onlinePlayerNames());
+        }
+        if (args.length == 4 && (subcommand.equals("award-first") || subcommand.equals("award"))) {
+            return matching(args[3], List.of("CONFIRM"));
+        }
+        return List.of();
+    }
+
+    private List<String> onlinePlayerNames() {
+        return Bukkit.getOnlinePlayers().stream().map(Player::getName).sorted(String.CASE_INSENSITIVE_ORDER).toList();
+    }
+
+    private List<String> matching(String rawPrefix, List<String> options) {
+        String prefix = rawPrefix == null ? "" : rawPrefix.toLowerCase(Locale.ROOT);
+        return options.stream().filter(option -> option.toLowerCase(Locale.ROOT).startsWith(prefix)).toList();
+    }
+
     private void usage(CommandSender sender) {
         sender.sendMessage("§e/tempchallenge status|verify <id> [player]|export|reconcile <player>|revoke-first <id> <winner-uuid>|award-first <id> <player> CONFIRM <reason>|test <id> <player>");
+        sender.sendMessage("§7Tip: challenge IDs and online player names are tab-completable; /tempchallenge award is an alias for award-first.");
     }
 
     private void reconcile(CommandSender sender, String[] args) {
@@ -153,7 +197,7 @@ public final class TempChallengesPlugin extends JavaPlugin {
                 WinnerRecord winner = winners.get(challenge.id());
                 String state = challenge.locked() ? "§cLOCKED§7 — " + challenge.lockReason() :
                         winner == null ? "§aOPEN" : "§6" + winner.name() + " §7(" + winner.uuid() + ")";
-                sender.sendMessage("§8- §e" + challenge.title() + "§8: " + state);
+                sender.sendMessage("§8- §e" + challenge.title() + " §8[§7" + challenge.id() + "§8]: " + state);
             }
         } catch (Exception ex) {
             sender.sendMessage("§cCould not read ledger: " + ex.getMessage());
