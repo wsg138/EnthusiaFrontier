@@ -8,10 +8,10 @@ SMOKE="${RUNNER_TEMP:-/tmp}/frontier-runtime-smoke"
 
 rm -rf "$SMOKE"
 mkdir -p "$SMOKE/server/plugins/EnthusiaFrontier"
-cp "$PLUGIN_JAR" "$SMOKE/server/plugins/EnthusiaFrontier-0.1.1.jar"
+cp "$PLUGIN_JAR" "$SMOKE/server/plugins/EnthusiaFrontier-0.1.2.jar"
 cp "$ROOT/src/main/resources/config.yml" "$SMOKE/server/plugins/EnthusiaFrontier/config.yml"
 cp "$PAPER_JAR" "$SMOKE/server/paper.jar"
-sha256sum "$SMOKE/server/plugins/EnthusiaFrontier-0.1.1.jar" > "$SMOKE/plugin.sha256"
+sha256sum "$SMOKE/server/plugins/EnthusiaFrontier-0.1.2.jar" > "$SMOKE/plugin.sha256"
 sha256sum "$SMOKE/server/paper.jar" > "$SMOKE/paper.sha256"
 
 cat > "$SMOKE/server/eula.txt" <<'EOF'
