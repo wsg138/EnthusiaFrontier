@@ -2,7 +2,7 @@ package net.enthusia.frontier.adapter.paper;
 
 import java.lang.reflect.Method;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
+import java.util.ArrayList;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -127,33 +127,44 @@ public final class MoonriseStorageReclaimAdapter implements StorageReclaimPort {
     public RegionReclaimResult reclaimEmptyRegion(String worldName, RegionKey region) throws Exception {
         World world = requireWorld(worldName, region.worldUuid());
         Object level = getHandle(world);
-        boolean deletedAny = false;
+        Path worldFolder = world.getWorldFolder().toPath();
+        // Inspect every storage before deleting anything. For example, a POI sidecar
+        // created after the batch scan must protect an otherwise empty terrain MCA.
+        var emptyStores = new ArrayList<StorageType>();
         for (StorageType type : storageTypes) {
-            Path folder = world.getWorldFolder().toPath().resolve(type.directory());
-            if (McaRegionFileInspector.hasAlternativeContainer(folder, region.x(), region.z())) {
-                return RegionReclaimResult.UNSUPPORTED;
-            }
-            Path regionFile = folder.resolve(McaRegionFileInspector.regionName(region.x(), region.z()));
-            if (!Files.exists(regionFile, LinkOption.NOFOLLOW_LINKS)) {
-                if (!McaRegionFileInspector.isCompletelyEmpty(folder, regionFile, region.x(), region.z())) {
-                    return RegionReclaimResult.NOT_EMPTY;
-                }
-                continue;
-            }
-
             Object controller = getControllerFor.invoke(null, level, type.token());
             Object cache = getCache.invoke(controller);
             synchronized (cache) {
-                int representativeChunkX = region.x() << 5;
-                int representativeChunkZ = region.z() << 5;
-                if (getRegionFileIfLoaded.invoke(cache, representativeChunkX, representativeChunkZ) != null) {
+                if (getRegionFileIfLoaded.invoke(cache, region.x() << 5, region.z() << 5) != null) {
                     return RegionReclaimResult.DEFERRED_OPEN;
                 }
-                if (!McaRegionFileInspector.isCompletelyEmpty(folder, regionFile, region.x(), region.z())) {
-                    return RegionReclaimResult.NOT_EMPTY;
+                switch (McaRegionFileInspector.inspectForReclaim(worldFolder.resolve(type.directory()), region)) {
+                    case UNSUPPORTED -> { return RegionReclaimResult.UNSUPPORTED; }
+                    case OCCUPIED -> { return RegionReclaimResult.NOT_EMPTY; }
+                    case EMPTY -> emptyStores.add(type);
+                    case ABSENT -> { }
+                    default -> throw new IllegalStateException("Unknown region contents");
                 }
-                if (Files.deleteIfExists(regionFile)) {
-                    deletedAny = true;
+            }
+        }
+        boolean deletedAny = false;
+        for (StorageType type : emptyStores) {
+            Path folder = worldFolder.resolve(type.directory());
+            Object controller = getControllerFor.invoke(null, level, type.token());
+            Object cache = getCache.invoke(controller);
+            synchronized (cache) {
+                if (getRegionFileIfLoaded.invoke(cache, region.x() << 5, region.z() << 5) != null) {
+                    return RegionReclaimResult.DEFERRED_OPEN;
+                }
+                switch (McaRegionFileInspector.inspectForReclaim(folder, region)) {
+                    case UNSUPPORTED -> { return RegionReclaimResult.UNSUPPORTED; }
+                    case OCCUPIED -> { return RegionReclaimResult.NOT_EMPTY; }
+                    case ABSENT -> { }
+                    case EMPTY -> {
+                        Path file = folder.resolve(McaRegionFileInspector.regionName(region.x(), region.z()));
+                        if (Files.deleteIfExists(file)) deletedAny = true;
+                    }
+                    default -> throw new IllegalStateException("Unknown region contents");
                 }
             }
         }
